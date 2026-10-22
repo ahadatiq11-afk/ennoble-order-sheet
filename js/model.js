@@ -171,6 +171,54 @@
     return manual.concat(auto);
   };
 
+  /* ---------- player tables, read straight from the customer's table rows ---------- */
+  // Safety net for when Gemini summarises a player table into size counts: find a table whose
+  // header has a name column and a size column, and turn its rows into players.
+  EO.findPlayerTable = function (text) {
+    const lines = String(text || "").split("\n");
+    const cellsOf = l => {
+      const m = /^(?:R\d+:\s*)?\|(.*)\|\s*$/.exec(l.trim());
+      return m ? m[1].split("|").map(x => x.replace(/\s+/g, " ").trim()) : null;
+    };
+    let best = null;
+    for (let i = 0; i < lines.length; i++) {
+      const head = cellsOf(lines[i]);
+      if (!head) continue;
+      const idx = re => head.findIndex(h => re.test(h));
+      const nameI = idx(/^(player\s*)?(sur)?name|^(player|athlete)s?$|^naam$|^nombre$/i);
+      const sizeI = head.findIndex(h => /^size$/i.test(h)) > -1 ? head.findIndex(h => /^size$/i.test(h)) : idx(/size/i);
+      if (nameI < 0 || sizeI < 0) continue;
+      const numI = idx(/^(#|no\.?|nr\.?|num(ber)?|jersey\s*(no|#|number)|shirt\s*(no|#|number))$/i);
+      const qtyI = idx(/qty|quantity|pcs/i);
+      const players = [];
+      const extraCols = [];
+      for (let j = i + 1; j < lines.length; j++) {
+        const row = cellsOf(lines[j]);
+        if (!row) break;
+        const aligned = row.length === head.length;
+        const name = row[nameI] || "", size = row[sizeI] || "", number = numI > -1 ? row[numI] || "" : "";
+        if (!name && !number) continue; // total rows, blank rows
+        const p = EO.blankPlayer();
+        p.name = name; p.number = number; p.size = EO.normSize(size);
+        const q = qtyI > -1 ? (aligned ? row[qtyI] : row[row.length - 1]) : "";
+        p.qty = EO.int(q) || "";
+        head.forEach((h, k) => {
+          if ([nameI, sizeI, numI, qtyI].includes(k) || !h) return;
+          // Merged header cells shift columns to the right of the size column: keep those as one "Details" value.
+          if (!aligned && k > sizeI) return;
+          if (row[k]) { if (!extraCols.includes(h)) extraCols.push(h); p.extra[h] = row[k]; }
+        });
+        if (!aligned) {
+          const rest = row.slice(sizeI + 1, qtyI > -1 ? row.length - 1 : row.length).filter(Boolean).join(" ");
+          if (rest) { if (!extraCols.includes("Details")) extraCols.push("Details"); p.extra.Details = rest; }
+        }
+        players.push(p);
+      }
+      if (players.length >= 2 && (!best || players.length > best.players.length)) best = { players, cols: extraCols.slice(0, 6) };
+    }
+    return best;
+  };
+
   const pairs = list => (Array.isArray(list) ? list : [])
     .map(x => ({ id: EO.uid(), label: str(x && x.label), value: str(x && x.value) }))
     .filter(x => x.label || x.value);

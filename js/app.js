@@ -189,6 +189,19 @@
         const missing = input.artworkFiles.filter(n => o.artwork.files.indexOf(n) === -1);
         if (missing.length) o.artwork.files = [o.artwork.files, missing.join(", ")].filter(Boolean).join("; ");
       }
+      // Gemini sometimes turns a player table into size counts only: rebuild the list from the table.
+      if (!o.items.some(it => it.roster.length)) {
+        const found = EO.findPlayerTable(input.sourceText);
+        if (found && o.items.length === 1) {
+          const it = o.items[0];
+          it.roster = found.players;
+          it.rosterCols = found.cols;
+          if (!EO.gridTotal(it)) EO.gridFromRoster(it);
+          o.checks.unshift({ id: EO.uid(), text: "The player list was filled in from the customer's table (" + found.players.length + " rows): check names, numbers and sizes.", resolved: false });
+        } else if (found) {
+          o.checks.unshift({ id: EO.uid(), text: "The order has a player table (" + found.players.length + " rows) but no player list was read: add it under Players on the right item.", resolved: false });
+        }
+      }
       if (res.truncated) o.checks.unshift({ id: EO.uid(), text: "Gemini's answer was cut short: compare the last items with the customer's order.", resolved: false });
       if (!o.items.length) o.items.push(EO.blankItem());
       o.readBy = res.model;
@@ -875,7 +888,7 @@
       ? el("div", { class: "note" }, open.length + (open.length === 1 ? " thing is" : " things are") + " still to confirm with the customer. " + (open.length === 1 ? "It's" : "They're") + " printed in the red box at the top of the sheet.")
       : el("div", { class: "note good", text: "Everything is confirmed. Download the PDF for production, or print it." }));
     const prev = $("#preview");
-    prev.replaceChildren(el("div", { class: "progress", style: "width:100%;max-width:820px" }, el("div", { class: "spin" }), el("div", { class: "msg", text: "Drawing the sheet…" })));
+    prev.replaceChildren(el("div", { class: "progress", style: "width:100%;max-width:820px" }, el("div", { class: "spin" }), el("div", { class: "msg", text: "Drawing the sheet and fitting the pictures onto as few pages as possible…" })));
     ["#btnPdf", "#btnXlsx", "#btnPrint"].forEach(b => { $(b).disabled = true; });
     try {
       lastPdf = await EO.makeSheetPdf(order);

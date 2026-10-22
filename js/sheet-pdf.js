@@ -77,9 +77,13 @@
         ] },
         { canvas: [{ type: "line", x1: 0, y1: 3, x2: CONTENT_W, y2: 3, lineWidth: 0.8, lineColor: INK }] }
       ],
-      margin: [0, 13, 0, 6],
-      headlineLevel: 1
+      margin: [0, 10, 0, 5]
     };
+  }
+  // A heading and the block under it go to the same page. (pdfmake's pageBreakBefore re-runs the
+  // layout and can leave a page empty, so headings are kept with their content structurally.)
+  function keep(head, first) {
+    return { stack: [head, first], unbreakable: true };
   }
   // A boxed notice: production notes and the open questions.
   function notice(title, body, o) {
@@ -97,48 +101,49 @@
   }
 
   /* ---------- pictures ---------- */
-  function pictureGrid(pics, itemIndex) {
-    if (!pics.length) return null;
+  // size: { wide, pair, cols } = max height of a full-width picture, max height of a smaller one, pictures per row.
+  function pictureGrid(pics, itemIndex, size) {
+    if (!pics.length) return [];
+    const cols = size.cols || 2;
     const label = p => {
       const n = itemIndex[p.item];
       return [{ text: n != null ? "ITEM " + EO.pad(n + 1, 2) + "  " : "", font: "Courier", bold: true, color: RED }, t(p.caption || "")];
     };
-    const body = [];
-    let pair = [];
+    const box = (p, w, h) => ({
+      stack: [
+        { image: p.dataUrl, fit: [w, h], alignment: "center", margin: [0, 4, 0, 3] },
+        { text: label(p), fontSize: 6.4, color: MUTED, margin: [5, 0, 5, 4] }
+      ]
+    });
+    const rows = [];
+    let group = [];
     const flush = () => {
-      if (!pair.length) return;
-      body.push(pair.map(p => ({
-        stack: [
-          { image: p.dataUrl, fit: [CONTENT_W / 2 - 16, 200], alignment: "center", margin: [0, 5, 0, 4] },
-          { text: label(p), fontSize: 6.6, color: MUTED, margin: [6, 0, 6, 5] }
-        ]
-      })).concat(pair.length === 1 ? [{ text: "" }] : []));
-      pair = [];
+      if (!group.length) return;
+      const cells = group.map(p => box(p, CONTENT_W / cols - 14, size.pair));
+      while (cells.length < cols) cells.push({ text: "" });
+      rows.push(cells);
+      group = [];
     };
     for (const p of pics) {
       // Wide pictures (size charts, flat CADs) get the full width so their small print stays readable.
       const wide = (p.w || 1) / (p.h || 1) > 1.55 || /size chart/i.test(p.caption || "");
       if (wide) {
         flush();
-        body.push([{
-          colSpan: 2,
-          stack: [
-            { image: p.dataUrl, fit: [CONTENT_W - 16, 330], alignment: "center", margin: [0, 5, 0, 4] },
-            { text: label(p), fontSize: 6.6, color: MUTED, margin: [6, 0, 6, 5] }
-          ]
-        }, {}]);
+        const cell = box(p, CONTENT_W - 14, size.wide);
+        cell.colSpan = cols;
+        rows.push([cell].concat(Array.from({ length: cols - 1 }, () => ({}))));
       } else {
-        pair.push(p);
-        if (pair.length === 2) flush();
+        group.push(p);
+        if (group.length === cols) flush();
       }
     }
     flush();
-    return body.map((row, i) => ({ table: { widths: ["*", "*"], body: [row], dontBreakRows: true }, layout: gridLayout, margin: [0, i ? 0 : 6, 0, 0] }));
-  }
-  // A heading and the first picture row travel together; the rest flow on.
-  function withPictures(head, rows) {
-    if (!rows || !rows.length) return [];
-    return [{ stack: [head, rows[0]], unbreakable: true }].concat(rows.slice(1));
+    const widths = Array.from({ length: cols }, () => "*");
+    return rows.map((row, i) => ({
+      stack: [{ table: { widths, body: [row] }, layout: gridLayout }],
+      unbreakable: true,
+      margin: [0, i ? 0 : 6, 0, 0]
+    }));
   }
 
   /* ---------- item ---------- */
@@ -227,26 +232,34 @@
     )));
     const longest = item.roster.reduce((m, p) => Math.max(m, t(p.size).length), 4);
     const widths = [14, small ? 62 : "*", 36, Math.min(58, 12 + longest * 5.4), 22].concat(extras.map(() => "*"), withNotes ? ["*"] : []);
+    const title = [{ text: "PLAYERS " + DASH + " NAMES, NUMBERS & SIZES (" + EO.rosterTotal(item) + " PCS)", colSpan: widths.length, fontSize: 6.2, bold: true, color: RED, characterSpacing: 0.4, border: [false, false, false, true], margin: [0, 5, 0, 1] }]
+      .concat(Array.from({ length: widths.length - 1 }, () => ({})));
     return {
-      stack: [
-        { text: "PLAYERS " + DASH + " NAMES, NUMBERS & SIZES (" + EO.rosterTotal(item) + " PCS)", fontSize: 6.2, bold: true, color: RED, characterSpacing: 0.4, margin: [0, 7, 0, 3], headlineLevel: 1 },
-        { table: { widths, body, headerRows: 1, keepWithHeaderRows: 1, dontBreakRows: true }, layout: qtyLayout }
-      ],
+      table: { widths, body: [title].concat(body), headerRows: 2, keepWithHeaderRows: 1, dontBreakRows: true },
+      layout: qtyLayout,
       unbreakable: item.roster.length <= 12
     };
   }
-  function itemBlock(item, i, pics, itemIndex) {
+  function itemBlock(item, i, pics, itemIndex, size) {
     const top = { stack: [itemHeader(item, i)].concat(itemSpecs(item)), unbreakable: true };
     const grid = itemGrid(item);
     const roster = itemRoster(item);
-    const pg = pictureGrid(pics, itemIndex) || [];
+    const pg = pictureGrid(pics, itemIndex, size);
     const small = item.rows.length <= 14 && !roster && !(item.specs || []).length;
     const parts = small ? [{ stack: [itemHeader(item, i)].concat(itemSpecs(item), [grid]), unbreakable: true }] : [top, grid];
     return { stack: parts.concat(roster ? [roster] : [], pg), margin: [0, 0, 0, 12] };
   }
 
   /* ---------- the document ---------- */
-  EO.buildSheetDoc = function (order, logo) {
+  const LAYOUTS = [
+    { place: "items", wide: 330, pair: 200, cols: 2 },
+    { place: "items", wide: 250, pair: 160, cols: 2 },
+    { place: "items", wide: 190, pair: 125, cols: 2 },
+    { place: "end", wide: 260, pair: 165, cols: 2 },
+    { place: "end", wide: 190, pair: 120, cols: 3 }
+  ];
+  EO.buildSheetDoc = function (order, logo, layout) {
+    layout = layout || LAYOUTS[0];
     const s = EO.settings();
     const no = order.orderNo || "DRAFT";
     const rev = order.rev > 1 ? "R" + order.rev : "R1";
@@ -255,8 +268,11 @@
     const ap = order.approvals || {};
     const itemIndex = {};
     order.items.forEach((it, i) => { itemIndex[it.id] = i; });
-    const picsFor = id => order.pictures.filter(p => p.item === id);
-    const general = order.pictures.filter(p => !(p.item in itemIndex));
+    const pictures = layout.none ? [] : order.pictures;
+    const picsFor = id => (layout.place === "end" ? [] : pictures.filter(p => p.item === id));
+    const general = layout.place === "end"
+      ? pictures.slice().sort((a, b) => (a.item in itemIndex ? itemIndex[a.item] : 999) - (b.item in itemIndex ? itemIndex[b.item] : 999))
+      : pictures.filter(p => !(p.item in itemIndex));
     const yes = x => (/^(yes|y|required|true)\b/i.test(EO.str(x)) ? { bold: true, red: true } : {});
 
     const content = [];
@@ -286,17 +302,19 @@
       content.push(notice("Check before production " + DASH + " confirm with customer", [{ ul: open.map(x => ({ text: t(x), fontSize: 8.2, margin: [0, 0.5, 0, 0.5] })), markerColor: RED }], { fill: RED_SOFT, line: RED }));
     }
 
-    content.push(section("Approvals before production"),
-      grid4([[
-        cell("Graphic mock-up of every jersey", v(ap.mockup), yes(ap.mockup)),
-        cell("Pre-print / strike-off test", v(ap.prePrint), yes(ap.prePrint)),
-        cell("Customer confirmation first", v(ap.confirmation), yes(ap.confirmation)),
-        cell("Pre-production sample", v(ap.sample), yes(ap.sample))
-      ]]));
+    if ([ap.mockup, ap.prePrint, ap.confirmation, ap.sample].some(has)) {
+      content.push(keep(section("Approvals before production"),
+        grid4([[
+          cell("Graphic mock-up of every jersey", v(ap.mockup), yes(ap.mockup)),
+          cell("Pre-print / strike-off test", v(ap.prePrint), yes(ap.prePrint)),
+          cell("Customer confirmation first", v(ap.confirmation), yes(ap.confirmation)),
+          cell("Pre-production sample", v(ap.sample), yes(ap.sample))
+        ]])));
+    }
 
     const specs = (order.colourSpecs || []).filter(x => has(x.name) || has(x.pantone) || has(x.cmyk));
     if (specs.length) {
-      content.push(section("Colour specifications"), {
+      content.push(keep(section("Colour specifications"), {
         table: {
           widths: ["*", "*", "*"],
           body: [["COLOUR", "PANTONE", "CMYK / VALUES"].map(h => ({ text: h, fontSize: 5.8, bold: true, fillColor: SOFT, characterSpacing: 0.3 }))]
@@ -308,22 +326,29 @@
           headerRows: 1, dontBreakRows: true
         },
         layout: qtyLayout
-      });
+      }));
     }
 
-    content.push(section("Items"));
-    order.items.forEach((it, i) => content.push(itemBlock(it, i, picsFor(it.id), itemIndex)));
-    if (!order.items.length) content.push({ text: "No items.", color: MUTED, fontSize: 8 });
+    order.items.forEach((it, i) => {
+      const block = itemBlock(it, i, picsFor(it.id), itemIndex, layout);
+      // The "Items" heading sits on the same page as the first item's header and specs.
+      if (i === 0) block.stack[0] = keep(section("Items"), block.stack[0]);
+      content.push(block);
+    });
+    if (!order.items.length) content.push(section("Items"), { text: "No items.", color: MUTED, fontSize: 8 });
 
     const a = order.artwork || {};
-    content.push(section("Artwork & decoration"),
+    content.push(keep(section("Artwork & decoration"),
       grid4([
         [cell("Files received", v(a.files), { span: 2 }), cell("Names & numbers", v(a.namesNumbers), { span: 2 })],
         [cell("Fonts", v(a.fonts), { span: 2 }), cell("Logos", v(a.logos), { span: 2 })],
         [cell("Artwork notes", v(a.notes), { span: 4 })]
-      ]));
-    const gen = pictureGrid(general, itemIndex);
-    if (gen) content.push(...withPictures(section("Size charts & reference pictures"), gen));
+      ])));
+    const gen = pictureGrid(general, itemIndex, layout);
+    if (gen.length) {
+      gen[0] = keep(section(layout.place === "end" ? "Mock-ups, size charts & reference pictures" : "Size charts & reference pictures"), gen[0]);
+      content.push(...gen);
+    }
 
     const sc = order.schedule || {};
     const pk = order.packing || {};
@@ -332,11 +357,13 @@
         section("Production schedule"),
         grid4([[cell("Cutting", v(EO.humanDate(sc.cutting)), { mono: true }), cell("Stitching", v(EO.humanDate(sc.stitching)), { mono: true }),
           cell("QC / finishing", v(EO.humanDate(sc.qc)), { mono: true }), cell("Dispatch", v(EO.humanDate(sc.dispatch)), { mono: true, bold: true })]]),
+      ].concat([pk.packing, pk.labels, pk.shipping].some(has) ? [
         section("Packing & dispatch"),
         grid4([
           [cell("Packing", v(pk.packing), { span: 4 })],
           [cell("Labels & tags", v(pk.labels), { span: 2 }), cell("Shipping method", v(pk.shipping), { span: 2 })]
-        ]),
+        ])
+      ] : [], [
         {
           columns: ["Prepared by / date", "Approved by / date", "Production manager / date"].map((label, i) => ({
             width: "*",
@@ -347,9 +374,9 @@
             ]
           })),
           columnGap: 24,
-          margin: [0, 26, 0, 0]
+          margin: [0, 24, 0, 0]
         }
-      ],
+      ]),
       unbreakable: true
     });
 
@@ -358,8 +385,6 @@
     return {
       pageSize: "A4",
       pageMargins: [MARGIN_X, 86, MARGIN_X, 46],
-      // A section heading starting in the bottom sixth of a page moves to the next page with its content.
-      pageBreakBefore: node => node.headlineLevel === 1 && node.startPosition && node.startPosition.verticalRatio > 0.84,
       defaultStyle: { font: "Helvetica", fontSize: 8.4, color: INK, lineHeight: 1.1 },
       info: { title: t("Production Order " + no + " - " + (c.team || c.name || "")), author: t(s.companyName || "Ennoble International"), subject: "Production order sheet (confidential)" },
       header: function () {
@@ -424,12 +449,49 @@
     await EO.loadScript("vendor/pdfmake-0.2.23.min.js");
     await EO.loadScript("vendor/pdfmake-std-fonts.js");
   }
-  EO.makeSheetPdf = async function (order) {
-    await ensurePdfMake();
-    const doc = window.pdfMake.createPdf(EO.buildSheetDoc(order, await EO.brandLogo()));
+  function render(order, logo, layout) {
+    const doc = window.pdfMake.createPdf(EO.buildSheetDoc(order, logo, layout));
     return new Promise((res, rej) => {
       try { doc.getBlob(b => res(b)); } catch (e) { rej(e); }
     });
+  }
+  // Pages, and pages that hold nothing but the header and footer. Text is compared with spaces and
+  // punctuation stripped, because letter-spaced headings come out of the PDF in pieces.
+  async function pageInfo(blob, orderNo) {
+    const pdf = await EO.openPdf(await blob.arrayBuffer());
+    const lib = await EO.pdfjs();
+    const s = EO.settings();
+    const alnum = x => String(x || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+    const fixed = [alnum(s.companyName || "Ennoble International"), alnum(s.companyTagline), "PRODUCTIONORDER", "INTERNALPRODUCTIONDOCUMENT", "CONFIDENTIAL", alnum(orderNo || "DRAFT")].filter(Boolean);
+    let blanks = 0;
+    for (let p = 1; p <= pdf.numPages; p++) {
+      const page = await pdf.getPage(p);
+      let body = alnum((await page.getTextContent()).items.map(i => i.str).join(""));
+      for (const f of fixed) body = body.split(f).join("");
+      body = body.replace(/PAGE\d+OF\d+|REVISION\d+|R\d+/g, "");
+      const ops = await page.getOperatorList();
+      const images = ops.fnArray.filter(f => f === lib.OPS.paintImageXObject || f === lib.OPS.paintInlineImageXObject).length;
+      if (body.length < 3 && images <= 1) blanks++;
+    }
+    return { pages: pdf.numPages, blanks };
+  }
+  // Printing costs paper: try picture sizes and placements, keep the shortest sheet with no empty page.
+  EO.makeSheetPdf = async function (order) {
+    await ensurePdfMake();
+    const logo = await EO.brandLogo();
+    if (!order.pictures.length) return render(order, logo, LAYOUTS[0]);
+    // Pictures can only add pages, so the sheet without them is the best any layout can do.
+    const floor = (await pageInfo(await render(order, logo, { place: "items", none: true }), order.orderNo)).pages;
+    let best = null;
+    for (const layout of LAYOUTS) {
+      const blob = await render(order, logo, layout);
+      const info = await pageInfo(blob, order.orderNo);
+      const score = info.pages + info.blanks * 2;
+      if (!best || score < best.score) best = { score, blob, info };
+      if (!info.blanks && info.pages <= floor) break;
+    }
+    return best.blob;
   };
+  EO.sheetPageInfo = pageInfo;
   EO.pdfText = t;
 })(window.EO);

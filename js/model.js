@@ -224,6 +224,22 @@
     .filter(x => x.label || x.value);
 
   /* ---------- turn Gemini's answer into an order ---------- */
+  // A picture with no item goes under the only item, or under the one item its caption clearly names.
+  // Size charts stay with the whole order. saidWhole: Gemini chose "whole order", so only the one-item rule applies.
+  EO.guessPictureItem = function (order, caption, saidWhole) {
+    const cap = String(caption || "");
+    if (/size\s*(chart|guide)|measurement chart/i.test(cap) || !order.items.length) return "";
+    if (order.items.length === 1) return order.items[0].id;
+    if (saidWhole) return "";
+    const words = s => String(s || "").toLowerCase().match(/[a-z0-9]{4,}/g) || [];
+    const have = new Set(words(cap));
+    let best = "", top = 0, tie = false;
+    for (const it of order.items) {
+      const score = new Set(words(it.product + " " + it.styleRef).filter(w => have.has(w))).size;
+      if (score > top) { best = it.id; top = score; tie = false; } else if (score && score === top) tie = true;
+    }
+    return tie ? "" : best;
+  };
   EO.orderFromAI = function (ai, pictures, sources, sourceText) {
     const o = EO.blankOrder();
     const od = ai.order || {};
@@ -318,9 +334,10 @@
     o.pictures = (pictures || []).map(pic => {
       const meta = info[pic.ref] || {};
       if (meta.keep === false) return null;
+      const caption = str(meta.caption) || pic.name || "";
       const n = EO.int(meta.item_number);
-      const item = n >= 1 && n <= o.items.length ? o.items[n - 1].id : "";
-      return { id: EO.uid(), dataUrl: pic.dataUrl, w: pic.w, h: pic.h, caption: str(meta.caption) || pic.name || "", item };
+      const item = n >= 1 && n <= o.items.length ? o.items[n - 1].id : EO.guessPictureItem(o, caption, n === 0);
+      return { id: EO.uid(), dataUrl: pic.dataUrl, w: pic.w, h: pic.h, caption, item };
     }).filter(Boolean);
 
     o.sources = sources || [];

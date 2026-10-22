@@ -362,7 +362,7 @@
     order = EO.blankOrder();
     order.items.push(EO.blankItem());
     if (input) {
-      order.pictures = input.pictures.map(p => ({ id: EO.uid(), dataUrl: p.dataUrl, w: p.w, h: p.h, caption: p.name, item: "" }));
+      order.pictures = input.pictures.map(p => ({ id: EO.uid(), dataUrl: p.dataUrl, w: p.w, h: p.h, caption: p.name, item: EO.guessPictureItem(order, p.name) }));
       order.sources = input.sources;
       order.sourceText = input.sourceText;
       if (input.artworkFiles.length) order.artwork.files = input.artworkFiles.join(", ");
@@ -960,7 +960,7 @@
       host.replaceChildren(el("div", { class: "empty" }, el("b", { text: "No pictures" }), "Pictures inside the customer's files appear here by themselves. Add mockups, logos or reference photos."));
       return;
     }
-    const opts = [["", "General (whole order)"]].concat(order.items.map((it, i) => [it.id, "Item " + EO.pad(i + 1, 2) + (it.product ? ": " + it.product : "")]));
+    const opts = [["", "Whole order (end of sheet)"]].concat(order.items.map((it, i) => [it.id, "Item " + EO.pad(i + 1, 2) + (it.product ? ": " + it.product : "")]));
     host.replaceChildren(el("div", { class: "pics" }, order.pictures.map((p, i) => {
       const cap = el("input", { class: "in", value: p.caption || "", placeholder: "What it shows", "aria-label": "Caption" });
       cap.addEventListener("input", () => { p.caption = cap.value; touched(); });
@@ -985,12 +985,12 @@
             const vp = page.getViewport({ scale: Math.min(2, 1400 / vp0.width) });
             const cv = el("canvas", { width: Math.round(vp.width), height: Math.round(vp.height) });
             await page.render({ canvasContext: cv.getContext("2d"), viewport: vp }).promise;
-            order.pictures.push({ id: EO.uid(), dataUrl: cv.toDataURL("image/jpeg", 0.85), w: cv.width, h: cv.height, caption: f.name + " page " + p, item: "" });
+            order.pictures.push({ id: EO.uid(), dataUrl: cv.toDataURL("image/jpeg", 0.85), w: cv.width, h: cv.height, caption: f.name + " page " + p, item: EO.guessPictureItem(order, f.name) });
             added++;
           }
         } else {
           const pic = await EO.imageToJpeg(f, 1600);
-          order.pictures.push({ id: EO.uid(), dataUrl: pic.dataUrl, w: pic.w, h: pic.h, caption: f.name.replace(/\.[^.]+$/, ""), item: "" });
+          order.pictures.push({ id: EO.uid(), dataUrl: pic.dataUrl, w: pic.w, h: pic.h, caption: f.name.replace(/\.[^.]+$/, ""), item: EO.guessPictureItem(order, f.name) });
           added++;
         }
       } catch (e) { EO.toast("Couldn't add " + f.name + ".", "bad"); }

@@ -251,12 +251,14 @@
   }
 
   /* ---------- the document ---------- */
+  // Pictures always sit under their own item; to save paper they get smaller, never moved.
   const LAYOUTS = [
-    { place: "items", wide: 330, pair: 200, cols: 2 },
-    { place: "items", wide: 250, pair: 160, cols: 2 },
-    { place: "items", wide: 190, pair: 125, cols: 2 },
-    { place: "end", wide: 260, pair: 165, cols: 2 },
-    { place: "end", wide: 190, pair: 120, cols: 3 }
+    { wide: 330, pair: 200, cols: 2 },
+    { wide: 250, pair: 160, cols: 2 },
+    { wide: 190, pair: 125, cols: 2 },
+    { wide: 160, pair: 115, cols: 3 },
+    { wide: 130, pair: 95, cols: 3 },
+    { wide: 110, pair: 80, cols: 4 }
   ];
   EO.buildSheetDoc = function (order, logo, layout) {
     layout = layout || LAYOUTS[0];
@@ -269,10 +271,8 @@
     const itemIndex = {};
     order.items.forEach((it, i) => { itemIndex[it.id] = i; });
     const pictures = layout.none ? [] : order.pictures;
-    const picsFor = id => (layout.place === "end" ? [] : pictures.filter(p => p.item === id));
-    const general = layout.place === "end"
-      ? pictures.slice().sort((a, b) => (a.item in itemIndex ? itemIndex[a.item] : 999) - (b.item in itemIndex ? itemIndex[b.item] : 999))
-      : pictures.filter(p => !(p.item in itemIndex));
+    const picsFor = id => pictures.filter(p => p.item === id);
+    const general = pictures.filter(p => !(p.item in itemIndex));
     const yes = x => (/^(yes|y|required|true)\b/i.test(EO.str(x)) ? { bold: true, red: true } : {});
 
     const content = [];
@@ -346,7 +346,7 @@
       ])));
     const gen = pictureGrid(general, itemIndex, layout);
     if (gen.length) {
-      gen[0] = keep(section(layout.place === "end" ? "Mock-ups, size charts & reference pictures" : "Size charts & reference pictures"), gen[0]);
+      gen[0] = keep(section("Size charts & reference pictures"), gen[0]);
       content.push(...gen);
     }
 
@@ -475,13 +475,13 @@
     }
     return { pages: pdf.numPages, blanks };
   }
-  // Printing costs paper: try picture sizes and placements, keep the shortest sheet with no empty page.
+  // Printing costs paper: try picture sizes, keep the shortest sheet with no empty page.
   EO.makeSheetPdf = async function (order) {
     await ensurePdfMake();
     const logo = await EO.brandLogo();
     if (!order.pictures.length) return render(order, logo, LAYOUTS[0]);
     // Pictures can only add pages, so the sheet without them is the best any layout can do.
-    const floor = (await pageInfo(await render(order, logo, { place: "items", none: true }), order.orderNo)).pages;
+    const floor = (await pageInfo(await render(order, logo, { none: true }), order.orderNo)).pages;
     let best = null;
     for (const layout of LAYOUTS) {
       const blob = await render(order, logo, layout);

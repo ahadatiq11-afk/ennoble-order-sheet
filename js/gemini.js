@@ -126,6 +126,7 @@ pictureRefs.length
       const err = new Error(ge.message || ("Gemini answered with error " + res.status));
       err.status = res.status;
       err.reason = ge.status || "";
+      err.details = Array.isArray(ge.details) ? ge.details : [];
       throw err;
     }
     return data;
@@ -135,12 +136,42 @@ pictureRefs.length
     const m = String(e.message || "");
     return /API key not valid|API_KEY_INVALID|api key expired|PERMISSION_DENIED|has not been used in project|is disabled|API key/i.test(m) || e.status === 401 || e.status === 403;
   }
+  // What Google says about a 429: daily or per-minute, and the limit itself.
+  function quotaOf(e) {
+    const q = { daily: false, limit: 0, model: "" };
+    for (const d of e.details || []) {
+      for (const v of (d && d.violations) || []) {
+        if (/PerDay/i.test(v.quotaId || "")) q.daily = true;
+        if (v.quotaValue) q.limit = Number(v.quotaValue) || q.limit;
+        if (v.quotaDimensions && v.quotaDimensions.model) q.model = v.quotaDimensions.model;
+      }
+    }
+    if (!q.limit) { const m = /limit:\s*(\d+)/i.exec(e.message || ""); if (m) q.limit = Number(m[1]); }
+    if (/per ?day|PerDay/i.test(e.message || "")) q.daily = true;
+    return q;
+  }
   function friendly(e) {
     if (e.name === "AbortError") return "Stopped.";
     if (e.network) return e.message;
     if (keyProblem(e)) return "Google refused the Gemini key (" + e.message + "). Open Settings and check the key.";
-    if (e.status === 429) return "The free Gemini limit is used up for now. Wait a minute (or until tomorrow for the daily limit) and try again, or use a key from a different Google account in Settings.";
+    if (e.status === 429) {
+      const q = quotaOf(e);
+      if (q.daily) return "Today's free Gemini allowance is used up" + (q.limit ? " (" + q.limit + " orders a day per model" + (q.model ? ", e.g. " + q.model : "") + ")" : "") + ". It resets at midnight US Pacific time, around noon in Pakistan. For more, turn on billing for the key in Google AI Studio, or fill this order in by hand.";
+      return "Too many orders in one minute for the free Gemini tier. Wait a minute and try again.";
+    }
     return "Gemini couldn't read this order: " + e.message;
+  }
+
+  // Models whose daily allowance ran out are skipped until Google's reset (midnight US Pacific).
+  const pacificDay = () => { try { return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Los_Angeles" }).format(new Date()); } catch (e) { return EO.todayISO(); } };
+  function spentModels() {
+    try { const x = JSON.parse(localStorage.getItem("eo.spent") || "{}"); return x.day === pacificDay() ? x.models || [] : []; }
+    catch (e) { return []; }
+  }
+  function markSpent(id) {
+    const list = spentModels();
+    if (!list.includes(id)) list.push(id);
+    try { localStorage.setItem("eo.spent", JSON.stringify({ day: pacificDay(), models: list })); } catch (e) { /* not kept; harmless */ }
   }
   EO.geminiFriendly = friendly;
 
@@ -173,7 +204,10 @@ pictureRefs.length
     if (prev > 0) list.unshift(list.splice(prev, 1)[0]);
     const main = list.filter(m => !/lite/i.test(m.id)).slice(0, 4);
     const lite = list.filter(m => /lite/i.test(m.id)).slice(0, 2);
-    return main.concat(lite);
+    const all = main.concat(lite);
+    const spent = spentModels();
+    const fresh = all.filter(m => !spent.includes(m.id));
+    return fresh.length ? fresh : all; // all spent: still try, Google may have reset early
   }
 
   function parseJSON(text) {
@@ -242,6 +276,7 @@ pictureRefs.length
             await new Promise(r => setTimeout(r, 2500));
             continue;
           }
+          if (e.status === 429 && quotaOf(e).daily) markSpent(m.id);
           break; // quota, not found, refused: next model
         }
       }

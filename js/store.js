@@ -95,6 +95,10 @@
       req.onsuccess = () => res(req.result);
       req.onerror = () => res(null);
       req.onblocked = () => res(null);
+      setTimeout(() => res(null), 8000);
+    }).then(db => {
+      if (!db) EO.toast("This browser's storage isn't answering, so orders are only kept until you close the tab. Close other tabs of this site, or restart the browser.", "bad");
+      return db;
     });
     return dbp;
   }

@@ -104,23 +104,39 @@ pictureRefs.length
   }
 
   /* ---------- talking to the API ---------- */
-  async function call(path, key, body, signal) {
-    let res;
+  const LIST_WAIT = 20000, READ_WAIT = 180000; // give up on Google after this long (ms)
+  async function call(path, key, body, signal, wait) {
+    wait = wait || LIST_WAIT;
+    const ctl = new AbortController();
+    let timedOut = false;
+    const timer = setTimeout(() => { timedOut = true; ctl.abort(); }, wait);
+    const stop = () => ctl.abort();
+    if (signal) { if (signal.aborted) ctl.abort(); else signal.addEventListener("abort", stop); }
+    let res, text;
     try {
       res = await fetch(API + path, {
         method: body ? "POST" : "GET",
         headers: Object.assign({ "x-goog-api-key": key }, body ? { "Content-Type": "application/json" } : {}),
         body: body ? JSON.stringify(body) : undefined,
-        signal
+        signal: ctl.signal
       });
+      text = await res.text();
     } catch (e) {
+      if (timedOut) {
+        const err = new Error("Gemini didn't answer within " + Math.round(wait / 60000) + " minutes.");
+        err.timeout = true;
+        throw err;
+      }
       if (e && e.name === "AbortError") throw e;
       const err = new Error("Can't reach Google Gemini. Check the internet connection.");
       err.network = true;
       throw err;
+    } finally {
+      clearTimeout(timer);
+      if (signal) signal.removeEventListener("abort", stop);
     }
     let data = null;
-    try { data = await res.json(); } catch (e) { data = null; }
+    try { data = JSON.parse(text); } catch (e) { data = null; }
     if (!res.ok) {
       const ge = (data && data.error) || {};
       const err = new Error(ge.message || ("Gemini answered with error " + res.status));
@@ -153,6 +169,7 @@ pictureRefs.length
   function friendly(e) {
     if (e.name === "AbortError") return "Stopped.";
     if (e.network) return e.message;
+    if (e.timeout) return e.message + " Google may be busy: try again in a few minutes. If it keeps happening, send fewer or smaller files.";
     if (keyProblem(e)) return "Google refused the Gemini key (" + e.message + "). Open Settings and check the key.";
     if (e.status === 429) {
       const q = quotaOf(e);
@@ -188,7 +205,7 @@ pictureRefs.length
         .map(m => ({ id: String(m.name || "").replace(/^models\//, ""), out: m.outputTokenLimit || 8192 }))
         .filter(m => /flash/i.test(m.id) && !/(image|tts|audio|live|embed|thinking|8b|vision|robotics|computer|native|learnlm|exp-\d)/i.test(m.id));
     } catch (e) {
-      if (e.name === "AbortError" || keyProblem(e) || e.network) throw e;
+      if (e.name === "AbortError" || keyProblem(e) || e.network || e.timeout) throw e;
       list = [];
     }
     if (!list.length) list = FALLBACK_MODELS.map(id => ({ id, out: 8192 }));
@@ -225,7 +242,7 @@ pictureRefs.length
       contents: [{ role: "user", parts: [{ text: prompt(refs) }].concat(parts, [{ text: "END OF THE CUSTOMER'S ORDER. Return the JSON now." }]) }],
       generationConfig: cfg
     };
-    const data = await call("/models/" + encodeURIComponent(model.id) + ":generateContent", key, body, signal);
+    const data = await call("/models/" + encodeURIComponent(model.id) + ":generateContent", key, body, signal, READ_WAIT);
     const cand = (data.candidates || [])[0];
     if (!cand) {
       const why = data.promptFeedback && data.promptFeedback.blockReason;
@@ -255,10 +272,19 @@ pictureRefs.length
     catch (e) { throw new Error(friendly(e)); }
 
     let lastErr = null;
+    let clock = null;
+    const reading = id => {
+      clearInterval(clock);
+      const t0 = Date.now();
+      const tell = () => onStatus("Gemini (" + id + ") is reading the order… " + Math.round((Date.now() - t0) / 1000) + " s. Big orders take 1–2 minutes.");
+      tell();
+      clock = setInterval(tell, 1000);
+    };
+    try {
     for (const m of models) {
       let useSchema = true, waited = false;
       for (let attempt = 0; attempt < 3; attempt++) {
-        onStatus("Gemini (" + m.id + ") is reading the order. Big orders take up to a minute…");
+        reading(m.id);
         try {
           const r = await generate(m, s.apiKey, input.parts, refs, useSchema, signal);
           EO.saveSettings({ model: m.id });
@@ -268,6 +294,7 @@ pictureRefs.length
           if (e.name === "AbortError") throw new Error("Stopped.");
           lastErr = e;
           if (keyProblem(e) && !/schema/i.test(e.message)) throw new Error(friendly(e));
+          if (e.timeout || e.network) throw new Error(friendly(e)); // another model won't do better
           // The strict answer format is rejected or the answer is garbled: same model, free-form JSON.
           if (useSchema && (e.badJson || (e.status === 400 && /schema|response_schema|responseSchema|Invalid JSON payload/i.test(e.message)))) { useSchema = false; continue; }
           // Busy: one short wait, then the same request again.
@@ -281,6 +308,7 @@ pictureRefs.length
         }
       }
     }
+    } finally { clearInterval(clock); }
     throw new Error(friendly(lastErr || new Error("no model answered")));
   };
 

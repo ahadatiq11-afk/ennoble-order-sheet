@@ -158,7 +158,10 @@
   let access = { locked: true, linkVersion: 1 };
   V.loadAccess = async function () {
     try {
-      const r = await fetch("access.json?t=" + Date.now(), { cache: "no-store" });
+      const ctl = new AbortController();
+      const timer = setTimeout(() => ctl.abort(), 6000); // slow network: go on with the last rules seen
+      const r = await fetch("access.json?t=" + Date.now(), { cache: "no-store", signal: ctl.signal });
+      clearTimeout(timer);
       if (!r.ok) throw new Error("access.json: " + r.status);
       const a = await r.json();
       access = { locked: a.locked !== false, linkVersion: Math.max(1, Math.floor(Number(a.linkVersion) || 1)) };

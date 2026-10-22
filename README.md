@@ -63,13 +63,13 @@ If Gemini can't read an order, click **Fill it in by hand instead**. You get a b
 - **What it reads:** PDF (typed or scanned), Word (.docx and old .doc), Excel (.xlsx, .xls, .csv, .ods), PowerPoint (.pptx), photos and screenshots, emails (.eml and Outlook .msg, attachments included), HTML, text and zip files. Design files (.ai, .eps, .psd, .cdr, embroidery files) are listed under *Files received*.
 - **Prices, customer contact people, phone numbers, emails and delivery addresses** are left off on purpose: the sheet goes to the floor and only carries what production needs. Gemini is told not to pick them up, and orders saved by older versions have them removed.
 - **What the sheet shows:** an URGENT banner for rush orders; production notes first; approvals (mock-up, pre-print test, customer confirmation, sample); Pantone/CMYK colours; then each item with its specs, colour × size grid, player list and its own mock-ups; size charts and general pictures at the end.
-- **Pictures and paper:** each mock-up prints under its own item; size charts and pictures for the whole order go at the end. To save paper the site tries a few picture sizes (down to four in a row) and keeps the version with the fewest pages and no empty page. That takes 3–5 seconds. To move a picture, pick a different item in the box under it in the review screen.
+- **Pictures and paper:** each mock-up prints under its own item; size charts and pictures for the whole order go at the end. To save paper the site tries a few picture sizes (down to four in a row) and keeps the version with the fewest pages and no empty page. Pictures are scaled to print size first. That takes a few seconds (up to about 15 for very big orders). To move a picture, pick a different item in the box under it in the review screen.
 - **Player lists:** if Gemini leaves out a player table, the site rebuilds the list from the customer's own table (Word, Excel) and adds a line to *Check before production* so someone checks it.
 - **Usage:** the review screen shows how many tokens Gemini used for that order, and the home screen shows today's reads on that computer. A typical order uses 15,000–25,000 tokens; Google's free limit is counted in requests per day, per key, shared by everyone using that key.
 
 ## For developers
 
-Static site, no build step. To run it locally:
+Static site, no build step. When you change anything in `css/` or `js/`, change the `?v=` value on the links in `index.html`, so browsers load the new files together instead of mixing new and cached ones. To run it locally:
 
 ```
 python3 -m http.server 8000

@@ -469,28 +469,79 @@
       let body = alnum((await page.getTextContent()).items.map(i => i.str).join(""));
       for (const f of fixed) body = body.split(f).join("");
       body = body.replace(/PAGE\d+OF\d+|REVISION\d+|R\d+/g, "");
+      if (body.length >= 3) continue; // has content: no need to look at its pictures (slow)
       const ops = await page.getOperatorList();
       const images = ops.fnArray.filter(f => f === lib.OPS.paintImageXObject || f === lib.OPS.paintInlineImageXObject).length;
-      if (body.length < 3 && images <= 1) blanks++;
+      if (images <= 1) blanks++;
     }
     return { pages: pdf.numPages, blanks };
   }
+  /* Pictures at print size. Full-size photos and PNGs (decoded in JavaScript) made every attempt slow;
+     no picture prints wider than the page, so 1400 px JPEG looks the same on paper. */
+  const PRINT_PX = 1400;
+  const printCache = new Map();
+  function loadImage(src) {
+    return new Promise((res, rej) => { const img = new Image(); img.onload = () => res(img); img.onerror = rej; img.src = src; });
+  }
+  async function printable(p) {
+    const key = p.id + ":" + p.dataUrl.length;
+    if (printCache.has(key)) return printCache.get(key);
+    let url = p.dataUrl;
+    try {
+      const img = await loadImage(p.dataUrl);
+      const k = Math.min(1, PRINT_PX / Math.max(img.naturalWidth, img.naturalHeight));
+      if (k < 1 || !/^data:image\/jpe?g/i.test(url)) {
+        const c = document.createElement("canvas");
+        c.width = Math.max(1, Math.round(img.naturalWidth * k));
+        c.height = Math.max(1, Math.round(img.naturalHeight * k));
+        const g = c.getContext("2d");
+        g.fillStyle = "#FFFFFF"; // transparent parts print white
+        g.fillRect(0, 0, c.width, c.height);
+        g.drawImage(img, 0, 0, c.width, c.height);
+        url = c.toDataURL("image/jpeg", 0.88);
+      }
+    } catch (e) { /* unreadable here: pdfmake gets the original */ }
+    if (printCache.size > 300) printCache.clear();
+    printCache.set(key, url);
+    return url;
+  }
+
   // Printing costs paper: try picture sizes, keep the shortest sheet with no empty page.
-  EO.makeSheetPdf = async function (order) {
+  // Largest pictures first, then the smallest; if the smallest saves pages, look between them for the
+  // largest size that saves as many. A time limit keeps the wait short on slow computers.
+  const SEARCH_MS = 15000;
+  EO.makeSheetPdf = async function (order, onStatus) {
+    const say = typeof onStatus === "function" ? onStatus : () => {};
     await ensurePdfMake();
     const logo = await EO.brandLogo();
     if (!order.pictures.length) return render(order, logo, LAYOUTS[0]);
+    say("Preparing the pictures…");
+    const pictures = [];
+    for (const p of order.pictures) pictures.push(Object.assign({}, p, { dataUrl: await printable(p) }));
+    const o = Object.assign({}, order, { pictures });
+    const started = Date.now();
     // Pictures can only add pages, so the sheet without them is the best any layout can do.
-    const floor = (await pageInfo(await render(order, logo, { none: true }), order.orderNo)).pages;
-    let best = null;
-    for (const layout of LAYOUTS) {
-      const blob = await render(order, logo, layout);
+    const floor = (await pageInfo(await render(o, logo, { none: true }), order.orderNo)).pages;
+    const tried = [];
+    const attempt = async i => {
+      say("Fitting the pictures onto as few pages as possible (try " + (tried.filter(Boolean).length + 1) + ")…");
+      const blob = await render(o, logo, LAYOUTS[i]);
       const info = await pageInfo(blob, order.orderNo);
-      const score = info.pages + info.blanks * 2;
-      if (!best || score < best.score) best = { score, blob, info };
-      if (!info.blanks && info.pages <= floor) break;
+      return (tried[i] = { i, blob, score: info.pages + info.blanks * 2, done: !info.blanks && info.pages <= floor });
+    };
+    const big = await attempt(0);
+    if (big.done) return big.blob;
+    const last = LAYOUTS.length - 1;
+    const small = await attempt(last);
+    if (small.score < big.score) {
+      let lo = 0, hi = last;
+      while (hi - lo > 1 && Date.now() - started < SEARCH_MS) {
+        const mid = (lo + hi) >> 1;
+        if ((await attempt(mid)).score <= small.score) hi = mid; else lo = mid;
+      }
     }
-    return best.blob;
+    // Fewest pages wins; on a tie, the bigger pictures.
+    return tried.filter(Boolean).reduce((a, b) => (b.score < a.score || (b.score === a.score && b.i < a.i) ? b : a)).blob;
   };
   EO.sheetPageInfo = pageInfo;
   EO.pdfText = t;

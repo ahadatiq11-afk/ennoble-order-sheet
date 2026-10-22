@@ -1021,10 +1021,12 @@
       ? el("div", { class: "note" }, open.length + (open.length === 1 ? " thing is" : " things are") + " still to confirm with the customer. " + (open.length === 1 ? "It's" : "They're") + " printed in the red box at the top of the sheet.")
       : el("div", { class: "note good", text: "Everything is confirmed. Download the PDF for production, or print it." }));
     const prev = $("#preview");
-    prev.replaceChildren(el("div", { class: "progress", style: "width:100%;max-width:820px" }, el("div", { class: "spin" }), el("div", { class: "msg", text: "Drawing the sheet and fitting the pictures onto as few pages as possible…" })));
+    const drawMsg = el("div", { class: "msg", role: "status", text: "Drawing the sheet…" });
+    prev.replaceChildren(el("div", { class: "progress", style: "width:100%;max-width:820px" }, el("div", { class: "spin" }), drawMsg));
     ["#btnPdf", "#btnXlsx", "#btnPrint"].forEach(b => { $(b).disabled = true; });
     try {
-      lastPdf = await EO.makeSheetPdf(order);
+      lastPdf = await EO.makeSheetPdf(order, t => { drawMsg.textContent = t; });
+      drawMsg.textContent = "Showing the preview…";
       await drawPreview(lastPdf);
     } catch (e) {
       prev.replaceChildren(el("div", { class: "note bad", text: "The sheet couldn't be drawn: " + (e && e.message ? e.message : e) }));
@@ -1362,7 +1364,12 @@
     if (/[#&]join=/.test(location.hash)) location.reload();
     else if (!EO.vault.isProtected() && !EO.vault.access().locked && readSetupLink()) renderSetup();
   });
-  boot();
+  // Whatever went wrong, say so and offer a reload, instead of a page that never appears.
+  boot().catch(e => {
+    console.error(e);
+    showLock("The page didn't load properly", "Reload the page. If it happens again, send Ahad this: " + (e && e.message ? e.message : String(e)),
+      () => { location.reload(); return new Promise(() => {}); }, { noInput: true, button: "Reload" });
+  });
 
   // Exposed for tests and the console.
   EO.app = { get order() { return order; }, openOrder, makeSheet, renderReview };

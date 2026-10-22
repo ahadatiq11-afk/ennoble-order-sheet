@@ -1122,6 +1122,7 @@
   }
   function nextPreview() {
     const ini = EO.cleanInitials($("#stIni").value) || "XX";
+    if (!nextEdited) $("#stNext").value = EO.peekNextNumber(ini).n; // each set of initials has its own series
     const yy = String(new Date().getFullYear()).slice(-2);
     $("#stNextPrev").textContent = "EI-" + yy + "-" + ini + "-" + EO.pad(Math.max(1, int($("#stNext").value) || 1), 4);
   }
@@ -1227,6 +1228,8 @@
   $("#stSave").addEventListener("click", async e => {
     e.preventDefault();
     const prot = EO.vault.isProtected(), admin = EO.vault.isAdmin();
+    const name = str($("#stName").value), ini = EO.cleanInitials($("#stIni").value);
+    if (!name || !ini) { EO.toast("Type your name and initials.", "bad"); return; }
     if (prot) {
       const sec = EO.vault.secrets();
       const companyKey = admin ? str($("#stCompanyKey").value) : sec.companyKey;
@@ -1235,16 +1238,13 @@
       if (useOwn && !ownKey) { EO.toast("Paste your own key, or choose the company key.", "bad"); return; }
       await EO.vault.setSecrets({ companyKey, useOwn, ownKey });
     }
+    const patch = { name, initials: ini };
     if (admin) {
-      const ini = EO.cleanInitials($("#stIni").value);
-      const patch = {
-        name: str($("#stName").value), initials: ini,
-        companyName: str($("#stCo").value) || "Ennoble International", companyTagline: $("#stTag").value, logo: pendingLogo
-      };
+      Object.assign(patch, { companyName: str($("#stCo").value) || "Ennoble International", companyTagline: $("#stTag").value, logo: pendingLogo });
       if (!prot) patch.apiKey = str($("#stKey").value);
-      EO.saveSettings(patch);
-      if (nextEdited && ini) EO.setNextNumber(int($("#stNext").value) || 1);
     }
+    EO.saveSettings(patch);
+    if (nextEdited) EO.setNextNumber(int($("#stNext").value) || 1);
     $("#settings").close();
     renderWho(); renderSetup();
     if (order && !$("#view-review").hidden) renderReview();

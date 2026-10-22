@@ -59,9 +59,8 @@
   /* ---------- order numbers: EI-26-AA-0001, one counter per person per year ---------- */
   function counterKey(initials, yy) { return "eo.counter." + initials + "." + yy; }
   EO.cleanInitials = s => String(s || "").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 4);
-  EO.peekNextNumber = function () {
-    const s = EO.settings();
-    const ini = EO.cleanInitials(s.initials) || "XX";
+  EO.peekNextNumber = function (initials) {
+    const ini = EO.cleanInitials(initials != null ? initials : EO.settings().initials) || "XX";
     const yy = String(new Date().getFullYear()).slice(-2);
     const n = Number(readLS(counterKey(ini, yy)) || "0") + 1;
     return { ini, yy, n, text: "EI-" + yy + "-" + ini + "-" + EO.pad(n, 4) };

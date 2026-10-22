@@ -244,7 +244,9 @@
 
 <!-- ======================= LOCK ======================= -->
 <div id="lock" class="lock" hidden>
-  <form class="lock-card" id="lockForm" autocomplete="off">
+  <form class="lock-card" id="lockForm">
+    <!-- a fixed account name, so browsers save the password as "Ennoble Order Sheet" without asking for one -->
+    <input type="text" class="vh" name="username" autocomplete="username" value="Ennoble Order Sheet" tabindex="-1" aria-hidden="true">
     <img src="img/ennoble-logo.png" alt="Ennoble" class="lock-logo">
     <h1 id="lockTitle">Enter the company password</h1>
     <p class="lead" id="lockMsg"></p>
@@ -259,7 +261,8 @@
     <div class="dhead"><h2 id="pwTitle">Password</h2></div>
     <div class="dbody">
       <p class="lead" id="pwMsg" style="margin:0"></p>
-      <input id="pwInput" type="password" class="in" autocomplete="off" aria-label="Password">
+      <input type="text" class="vh" name="username" autocomplete="username" value="Ennoble Order Sheet" tabindex="-1" aria-hidden="true">
+      <input id="pwInput" type="password" class="in" autocomplete="current-password" aria-label="Password">
     </div>
     <div class="dfoot"><button class="btn" value="cancel" id="pwCancel">Cancel</button><button class="btn primary" value="ok" id="pwOk">OK</button></div>
   </form>

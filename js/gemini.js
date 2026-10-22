@@ -284,15 +284,10 @@ pictureRefs.length
     throw new Error(friendly(lastErr || new Error("no model answered")));
   };
 
-  /* Settings "Test key" button. */
+  /* Settings "Test key" button. Listing the models proves the key works without using one of the
+     day's free reads (a wrong or blocked key is refused here just the same). */
   EO.testKey = async function (key) {
     const models = await candidates(key);
-    // A tiny real call proves the key can generate, not just list.
-    const m = models[0];
-    await call("/models/" + encodeURIComponent(m.id) + ":generateContent", key, {
-      contents: [{ role: "user", parts: [{ text: "Reply with the word OK." }] }],
-      generationConfig: { maxOutputTokens: 20 }
-    });
-    return m.id;
+    return models[0].id;
   };
 })(window.EO);

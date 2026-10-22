@@ -137,16 +137,39 @@
     if (!(await V.checkPassword(password))) throw new Error("That isn't the company password.");
     const salt = rand(16);
     const box = await sealJSON(await kek(password, salt), payload);
-    const packed = btoa(JSON.stringify({ v: 1, s: toB64(salt), i: toB64(box.iv), c: toB64(box.ct) }))
+    const packed = btoa(JSON.stringify({ v: 1, lv: payload.lv || 1, s: toB64(salt), i: toB64(box.iv), c: toB64(box.ct) }))
       .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
     return location.origin + location.pathname + "#join=" + packed;
   };
+  const unpack = packed => JSON.parse(atob(packed.replace(/-/g, "+").replace(/_/g, "/")));
+  // The version shown on the outside lets an old link be turned away before any password is typed.
+  V.joinVersion = function (packed) {
+    try { return Number(unpack(packed).lv) || 1; } catch (e) { return 1; }
+  };
   V.readJoin = async function (packed, password) {
     try {
-      const o = JSON.parse(atob(packed.replace(/-/g, "+").replace(/_/g, "/")));
+      const o = unpack(packed);
       return await openJSON(await kek(password, fromB64(o.s)), { iv: fromB64(o.i), ct: fromB64(o.c) });
     } catch (e) { return null; }
   };
+
+  /* ---------- site-wide rules from access.json in the repo: who may open the tool, which links still work ---------- */
+  const ACCESS = "eo.access";
+  let access = { locked: true, linkVersion: 1 };
+  V.loadAccess = async function () {
+    try {
+      const r = await fetch("access.json?t=" + Date.now(), { cache: "no-store" });
+      if (!r.ok) throw new Error("access.json: " + r.status);
+      const a = await r.json();
+      access = { locked: a.locked !== false, linkVersion: Math.max(1, Math.floor(Number(a.linkVersion) || 1)) };
+      ls.set(ACCESS, JSON.stringify(access));
+    } catch (e) {
+      // offline or missing: keep the last rules this computer saw
+      try { Object.assign(access, JSON.parse(ls.get(ACCESS) || "{}")); } catch (err) { /* keep the defaults */ }
+    }
+    return access;
+  };
+  V.access = () => Object.assign({}, access);
 
   /* ---------- backups: records stay encrypted, the data key travels wrapped by the password ---------- */
   V.backupHeader = () => JSON.parse(ls.get(VAULT));

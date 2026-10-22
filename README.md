@@ -14,7 +14,7 @@ It's free. There's no server: everything runs in the browser. A company password
 
 1. **Get a free Gemini key.** Open https://aistudio.google.com/apikey, sign in with a Google account, and click **Create API key**. Don't turn on billing. Copy the key straight away; it starts with `AQ.` or `AIza`.
 2. **Switch the website on** (once). In this GitHub repo go to **Settings → Pages**. Under *Build and deployment*, set **Source: Deploy from a branch**, **Branch: `main`**, folder **`/ (root)`**, and click **Save**. After a minute or two the site is live at the address above.
-3. **Set up your computer.** Open the website and type your name, your initials (for example `AA`) and the Gemini key. Click **Save and start**.
+3. **Set up your computer.** Open the website and type your name, your initials (for example `AA`) and the Gemini key. Click **Save and start**. (On a brand-new setup the site first shows "Ennoble staff only": set `"locked": false` in `access.json`, do steps 3 and 4, then set it back to `true`.)
 4. **Turn on the password.** Open **Settings → Password & access**. Choose a **company password** (workers type it to open the tool) and a different **admin password** (only you; it unlocks the settings). Click **Turn on password**.
 5. **Invite workers.** In **Settings → Give the tool to a worker**, choose whether the link includes your Gemini key and whether workers may use their own key instead. Then click **Copy worker link**. Send the link on WhatsApp or email, and tell them the company password **separately** (in person or by phone).
 
@@ -36,13 +36,21 @@ If Gemini can't read an order, click **Fill it in by hand instead**. You get a b
 
 ## Password and access
 
-- **Company password:** needed to open the tool on every computer. Without it the page shows only the lock screen. On each computer it also encrypts the saved orders and the Gemini key(s) (AES-256), so someone who opens the browser's storage sees only scrambled data.
+- **Staff only:** a computer that wasn't set up with a worker link sees only "Ennoble staff only". This is switched on by `"locked": true` in [`access.json`](access.json).
+- **Company password:** needed to open the tool on every computer that was set up with a link. On each computer it also encrypts the saved orders and the Gemini key(s) (AES-256), so someone who opens the browser's storage sees only scrambled data.
 - **Admin password:** only Ahad has it. Workers can read orders, make sheets, download backups, choose between the company key and their own, and change their own name, initials and next order number. They can't change the sheet header, the company key or the passwords, make worker links, or restore backups. To change a setting on a worker's computer, open **Settings** there and type the admin password: it unlocks the settings until that browser window is closed or **Lock** is pressed.
 - **Worker link:** carries the company name, the admin lock and (if ticked) the company Gemini key, all encrypted with the company password. The link alone is useless, so send the password separately.
-- **Changing the company password:** change it in **Settings**, send everyone a new worker link and the new password. A computer opening the new link asks once for the old password so it keeps its saved orders. If someone left the company and kept the old link and password, also make a new Gemini key in AI Studio and delete the old one: they could still read the old key from the old link.
+- **Links don't expire by themselves.** A link keeps working for anyone who knows the password it was made with, even after you change the password.
+- **Cancelling every old link (for example, someone left):**
+  1. In AI Studio, make a new Gemini key and delete the old one. This is the real off switch: the old key in old links and on old computers stops working at once.
+  2. Open **Settings**, paste the new key into **Company key** and save. If you like, change the company password too.
+  3. On GitHub, open [`access.json`](access.json), click the pencil, raise `linkVersion` by 1 (for example `1` to `2`) and click **Commit changes**. Within about 10 minutes every older link is refused, and computers set up with an older link show "Open your new worker link" until they do.
+  4. Reload the tool. Your own computer shows the same screen: type the **admin password** to carry on.
+  5. In **Settings**, click **Copy worker link** and send the new link (and password) to the people who should keep access. A computer opening it keeps its saved orders. If the password changed, it asks once for the old one.
+- **Keep a link for yourself.** Save one current worker link somewhere safe (your notes app). With it, the company password and the admin password you can set up any new computer or phone as admin. If you ever lose every set-up computer, set `"locked": false` in `access.json`, set one computer up again, turn the password on, and set it back to `true`.
 - **Their own key:** a worker who chooses **Use my own key** uses their own free daily allowance, which leaves the company key's 20 orders a day for everyone else.
 - **The website itself:** workers only use it. Only the people with write access to this GitHub repository can change the site, so keep that to yourself (**Settings → Collaborators**).
-- **What it can't stop:** it all runs in the browser. Someone who knows the company password can open the browser's developer tools and dig out the company key, or switch off the admin lock on their own computer. That only changes their own copy, never the website or anyone else's computer. Give the password only to people you trust with the key, and use a strong password (at least 8 characters, ideally a short sentence) because a stolen link can be guessed against offline.
+- **What it can't stop:** it all runs in the browser and the code is public. Someone who knows the company password can open the browser's developer tools and dig out the company key, or switch off the admin lock or the link check on their own computer. A technical stranger could also run a copy of the code with their own key; they still get none of your orders or keys. That only changes their own copy, never the website or anyone else's computer. Give the password only to people you trust with the key, and use a strong password (at least 8 characters, ideally a short sentence) because a stolen link can be guessed against offline.
 - **Backups** made while the password is on stay encrypted. Restoring one asks for the company password that was in use when it was made.
 
 ## Good to know
@@ -78,7 +86,8 @@ python3 -m http.server 8000
 | `js/sheet-pdf.js` | The production sheet as a PDF (pdfmake) |
 | `js/sheet-xlsx.js` | The Excel copy (ExcelJS) |
 | `js/store.js` | Settings (localStorage), order numbers, saved orders (IndexedDB) |
-| `js/vault.js` | Company password: encryption of saved orders and keys, the worker link, the admin lock, encrypted backups |
+| `js/vault.js` | Company password: encryption of saved orders and keys, the worker link, the admin lock, encrypted backups, the rules in `access.json` |
+| `access.json` | Site-wide rules: `locked` (staff only) and `linkVersion` (raise it to cancel old worker links) |
 
 Libraries are vendored in `vendor/`: pdf.js 4.10.38, pdfmake 0.2.23 (with Helvetica/Courier metrics from pdfkit), ExcelJS 4.4.0, JSZip 3.10.1 and SheetJS 0.18.5.
 

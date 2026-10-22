@@ -12,7 +12,8 @@
     companyTagline: "Sportswear · Apparel · Custom Team Uniforms",
     logo: "",               // data URL, optional
     admin: null,            // { salt, hash } of the admin password, when protection is on
-    allowOwnKey: true       // workers may use their own Gemini key instead of the company key
+    allowOwnKey: true,      // workers may use their own Gemini key instead of the company key
+    linkVersion: 1          // version of the worker link this computer was set up with (see access.json)
   };
   const protectedNow = () => !!(EO.vault && EO.vault.isProtected());
 

@@ -108,7 +108,9 @@
 
   /* ---------- lock screen and password prompts ---------- */
   // Shows the full-screen lock until check(password) returns true; any string it returns is shown as the error.
-  function showLock(title, msg, check) {
+  // Without check it is a notice with no way past. The page stays hidden until boot has finished.
+  function showLock(title, msg, check, opts) {
+    opts = opts || {};
     return new Promise(resolve => {
       document.body.classList.add("locked");
       $("#lock").hidden = false;
@@ -116,18 +118,24 @@
       $("#lockMsg").textContent = msg;
       $("#lockErr").textContent = "";
       $("#lockPw").value = "";
-      setTimeout(() => $("#lockPw").focus(), 50);
+      $("#lockPw").hidden = !check || !!opts.noInput;
+      $("#lockPw").placeholder = opts.placeholder || "Company password";
+      $("#lockPw").setAttribute("aria-label", $("#lockPw").placeholder);
+      $("#lockGo").hidden = !check;
+      $("#lockGo").textContent = opts.button || "Unlock";
+      $("#lockForm").onsubmit = e => e.preventDefault();
+      if (!check) return;
+      if (!opts.noInput) setTimeout(() => $("#lockPw").focus(), 50);
       $("#lockForm").onsubmit = async e => {
         e.preventDefault();
-        const pw = $("#lockPw").value;
-        if (!pw) return;
+        const pw = opts.noInput ? "" : $("#lockPw").value;
+        if (!pw && !opts.noInput) return;
         $("#lockGo").disabled = true;
         $("#lockErr").textContent = "Checking…";
         let res;
         try { res = await check(pw); } catch (err) { res = err && err.message ? err.message : "Something went wrong."; }
         if (res === true) {
           $("#lock").hidden = true;
-          document.body.classList.remove("locked");
           $("#lockGo").disabled = false;
           resolve();
           return;
@@ -157,6 +165,7 @@
     await showLock("Welcome to the Ennoble Order Sheet", "Type the company password your manager gave you. You only do this once on this computer.", async pw => {
       const cfg = await EO.vault.readJoin(packed, pw);
       if (!cfg) return "That password doesn't open this link.";
+      if ((cfg.lv || 1) < EO.vault.access().linkVersion) return "This link has been replaced. Ask your manager for the new one.";
       const before = EO.settings();
       if (EO.vault.isProtected()) {
         if (!(await EO.vault.unlock(pw))) {
@@ -177,7 +186,8 @@
         companyName: cfg.co || before.companyName,
         companyTagline: cfg.tg != null ? cfg.tg : before.companyTagline,
         admin: cfg.admin || null,
-        allowOwnKey: cfg.own !== false
+        allowOwnKey: cfg.own !== false,
+        linkVersion: cfg.lv || 1
       });
       await EO.encryptOrders();
       EO.toast("You're in. Type your name and initials to finish.");
@@ -187,6 +197,25 @@
   function unlockFlow() {
     return showLock("Enter the company password", "This tool is locked. Ask your manager for the password.",
       async pw => ((await EO.vault.unlock(pw)) ? true : "That password isn't right."));
+  }
+  // access.json says only computers set up with a worker link may use the tool.
+  function staffOnly() {
+    showLock("Ennoble staff only", "Open the worker link your manager sent you, then type the company password." +
+      (EO.settings().name ? " Orders saved on this computer are kept." : ""), null);
+  }
+  // This computer was set up with a link that has since been replaced. The admin may carry on.
+  function renewedFlow() {
+    return showLock("Open your new worker link",
+      "The worker links have been replaced. Open the new link your manager sent you and type the company password. Orders saved on this computer are kept.",
+      async pw => {
+        if (!(await EO.vault.checkAdmin(pw))) return "That isn't the admin password.";
+        EO.saveSettings({ linkVersion: EO.vault.access().linkVersion });
+        return true;
+      }, { placeholder: "Admin password (admin only)", button: "Continue as admin" });
+  }
+  function oldLinkNotice(canGoOn) {
+    return showLock("This link has been replaced", "Ask your manager for the new worker link.",
+      canGoOn ? () => true : null, { noInput: true, button: "Continue" });
   }
   function renderNav() { $("#navLock").hidden = !EO.vault.isProtected(); }
   $("#navLock").addEventListener("click", async () => {
@@ -1064,6 +1093,13 @@
     $("#stProtOn").hidden = !prot;
     $("#stLinkOn").hidden = !prot;
     $("#stLinkOff").hidden = prot;
+    const acc = EO.vault.access();
+    $("#stUnprotect").hidden = acc.locked; // the site only opens with a password: this computer would lock itself out
+    const host = /^([^.]+)\.github\.io$/.exec(location.hostname), repo = location.pathname.split("/")[1];
+    const editUrl = host && repo ? "https://github.com/" + host[1] + "/" + repo + "/edit/main/access.json" : "";
+    $("#stLinkVer").replaceChildren("Links copied now are version " + acc.linkVersion + ". To cancel every link made so far, ",
+      editUrl ? el("a", { href: editUrl, target: "_blank", rel: "noopener", text: "open access.json on GitHub" }) : "open access.json in the GitHub repo",
+      ", change linkVersion to " + (acc.linkVersion + 1) + " and commit. Then come back, reload and copy a new link.");
     keyState();
   }
   function keyState() {
@@ -1151,7 +1187,7 @@
     const key = str($("#stKey").value) || EO.settings().apiKey;
     say("Turning on…");
     await EO.vault.create(p1, { companyKey: key, ownKey: "", useOwn: false });
-    EO.saveSettings({ admin: await EO.vault.makeAdmin(a1), allowOwnKey: true });
+    EO.saveSettings({ admin: await EO.vault.makeAdmin(a1), allowOwnKey: true, linkVersion: EO.vault.access().linkVersion });
     await EO.vault.checkAdmin(a1);
     await EO.encryptOrders();
     renderNav();
@@ -1191,12 +1227,14 @@
     const pw = await askPassword("Company password", "Type the company password. The link is locked with it, so a link on its own is useless.");
     if (!pw) return;
     const allowOwn = $("#stAllowOwn").checked;
+    const acc = await EO.vault.loadAccess(); // always the newest link version
     try {
       const link = await EO.vault.makeJoinLink(pw, {
-        v: 1, key: includeKey ? companyKey : "", co: str($("#stCo").value) || s.companyName,
+        v: 1, lv: acc.linkVersion, key: includeKey ? companyKey : "", co: str($("#stCo").value) || s.companyName,
         tg: $("#stTag").value, admin: s.admin, own: allowOwn || !includeKey
       });
-      EO.saveSettings({ allowOwnKey: allowOwn });
+      EO.saveSettings({ allowOwnKey: allowOwn, linkVersion: acc.linkVersion });
+      applyAccess();
       try { await navigator.clipboard.writeText(link); $("#stJoinMsg").textContent = "Copied. Send the link, and tell them the password separately."; }
       catch (e) { prompt("Copy this worker link:", link); }
     } catch (e) { $("#stJoinMsg").textContent = e.message; }
@@ -1290,15 +1328,25 @@
   window.addEventListener("beforeunload", () => persist.flush());
 
   async function boot() {
+    document.body.classList.add("locked"); // nothing shows until the access rules are settled
+    const access = await EO.vault.loadAccess();
     const join = (/[#&]join=([A-Za-z0-9_-]+)/.exec(location.hash || "") || [])[1];
+    let joined = false;
     if (join) {
       history.replaceState(null, "", location.pathname + location.search);
-      await joinFlow(join);
-    } else if (EO.vault.isProtected()) {
-      document.body.classList.add("locked");
-      if (!(await EO.vault.resume())) await unlockFlow();
-      document.body.classList.remove("locked");
+      if (EO.vault.joinVersion(join) < access.linkVersion) await oldLinkNotice(EO.vault.isProtected() || !access.locked);
+      else { await joinFlow(join); joined = true; }
     }
+    if (!joined) {
+      if (EO.vault.isProtected()) {
+        if (EO.settings().linkVersion < access.linkVersion) await renewedFlow();
+        if (!(await EO.vault.resume())) await unlockFlow();
+      } else if (access.locked) {
+        staffOnly();
+        return;
+      }
+    }
+    document.body.classList.remove("locked");
     if (/[#&]setup=/.test(location.hash || "")) {
       if (EO.vault.isProtected()) {
         history.replaceState(null, "", location.pathname + location.search);
@@ -1312,7 +1360,7 @@
   }
   window.addEventListener("hashchange", () => {
     if (/[#&]join=/.test(location.hash)) location.reload();
-    else if (!EO.vault.isProtected() && readSetupLink()) renderSetup();
+    else if (!EO.vault.isProtected() && !EO.vault.access().locked && readSetupLink()) renderSetup();
   });
   boot();
 

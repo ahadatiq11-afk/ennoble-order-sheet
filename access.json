@@ -1,0 +1,5 @@
+{
+  "locked": true,
+  "linkVersion": 1,
+  "_help": "locked: true means only computers set up with a worker link (and the company password) can open the tool; false lets anyone set it up with their own key. linkVersion: raise it by 1 to cancel every worker link made before; computers set up with an older link must open a new one (the admin can get past with the admin password). Changes take effect within about 10 minutes."
+}

@@ -200,7 +200,10 @@
   }
   // access.json says only computers set up with a worker link may use the tool.
   function staffOnly() {
-    showLock("Ennoble staff only", "Open the worker link your manager sent you, then type the company password." +
+    const oldLink = /[#&]setup=/.test(location.hash || "");
+    showLock("Ennoble staff only", (oldLink
+      ? "This is the old setup link, which no longer works. Ask your manager for the new worker link and the company password."
+      : "Open the worker link your manager sent you (the whole long link) in this browser, then type the company password. The plain website address or a bookmark won't work the first time.") +
       (EO.settings().name ? " Orders saved on this computer are kept." : ""), null);
   }
   // This computer was set up with a link that has since been replaced. The admin may carry on.
@@ -1335,9 +1338,10 @@
     const join = (/[#&]join=([A-Za-z0-9_-]+)/.exec(location.hash || "") || [])[1];
     let joined = false;
     if (join) {
-      history.replaceState(null, "", location.pathname + location.search);
-      if (EO.vault.joinVersion(join) < access.linkVersion) await oldLinkNotice(EO.vault.isProtected() || !access.locked);
-      else { await joinFlow(join); joined = true; }
+      // The link stays in the address bar until the password is accepted, so a reload doesn't lose it.
+      const tidy = () => history.replaceState(null, "", location.pathname + location.search);
+      if (EO.vault.joinVersion(join) < access.linkVersion) { tidy(); await oldLinkNotice(EO.vault.isProtected() || !access.locked); }
+      else { await joinFlow(join); tidy(); joined = true; }
     }
     if (!joined) {
       if (EO.vault.isProtected()) {

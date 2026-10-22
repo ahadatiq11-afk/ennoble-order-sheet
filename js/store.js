@@ -35,6 +35,19 @@
     return !!(s.name && s.initials && s.apiKey);
   };
 
+  /* ---------- Gemini use on this computer, per day (Google's limits are per day too) ---------- */
+  const usageKey = () => "eo.usage." + EO.todayISO();
+  EO.usageToday = function () {
+    try { return Object.assign({ reads: 0, tokens: 0 }, JSON.parse(readLS(usageKey()) || "{}")); }
+    catch (e) { return { reads: 0, tokens: 0 }; }
+  };
+  EO.countUsage = function (tokens) {
+    const u = EO.usageToday();
+    u.reads += 1;
+    u.tokens += Number(tokens) || 0;
+    writeLS(usageKey(), JSON.stringify(u));
+  };
+
   /* ---------- order numbers: EI-26-AA-0001, one counter per person per year ---------- */
   function counterKey(initials, yy) { return "eo.counter." + initials + "." + yy; }
   EO.cleanInitials = s => String(s || "").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 4);

@@ -25,8 +25,8 @@ It's free. There's no login and no server: everything runs in the browser.
 
 1. **New order:** drop all the customer's files for this one order, or paste the email or WhatsApp text. You can also press Ctrl+V to paste a screenshot.
 2. Click **Read the order**. It takes 10–60 seconds.
-3. **Check it.** Compare the quantities with the customer's order. Look at the **Check before production** list: these are gaps and contradictions to confirm with the customer. Tick a line once it's sorted; unticked lines print in an orange box at the top of the sheet.
-4. Fix anything directly. Each item has a **colour × size grid**. Use *Quick add* to type a row like `Navy: S 10, M 14, L 8`. Team orders have a **Roster** (names, numbers, sizes) you can paste in.
+3. **Check it.** Compare the quantities with the customer's order. Look at the **Check before production** list: these are gaps and contradictions to confirm with the customer. Tick a line once it's sorted; unticked lines print in a red box at the top of the sheet.
+4. Fix anything directly. Each item has a **colour × size grid**; use *Quick add* to type a row like `Navy: S 10, M 14, L 8`. Team orders have a **Players** table (name, number, size, plus any extra columns such as length, chest or tailored). Spec boxes and side-by-side descriptions go under **Construction & design details**, and Pantone/CMYK codes under **Colour specifications**.
 5. Click **Make order sheet**. Then use **Download PDF**, **Download Excel** or **Print**.
 
 If Gemini can't read an order, click **Fill it in by hand instead**. You get a blank sheet with the customer's text next to it.
@@ -39,7 +39,9 @@ If Gemini can't read an order, click **Fill it in by hand instead**. You get a b
 - **Free limits:** Google's free tier allows a limited number of reads per minute and per day. If it runs out, the page says so: wait a bit (daily limits reset at midnight US Pacific time), or use a key made under a different Google account. Limits count per Google project, so a second key in the same project doesn't add anything.
 - **Privacy:** on Google's free tier, Google may use what you send to improve its products, and its reviewers may read it. If that matters for a customer, turn on billing for the key in Google AI Studio. It costs cents per order, and nothing else changes.
 - **What it reads:** PDF (typed or scanned), Word (.docx and old .doc), Excel (.xlsx, .xls, .csv, .ods), PowerPoint (.pptx), photos and screenshots, emails (.eml and Outlook .msg, attachments included), HTML, text and zip files. Design files (.ai, .eps, .psd, .cdr, embroidery files) are listed under *Files received*.
-- **Prices** are left off the sheet on purpose: it's a production document.
+- **Prices, customer contact people, phone numbers, emails and delivery addresses** are left off on purpose: the sheet goes to the floor and only carries what production needs. Gemini is told not to pick them up, and orders saved by older versions have them removed.
+- **What the sheet shows:** an URGENT banner for rush orders; production notes first; approvals (mock-up, pre-print test, customer confirmation, sample); Pantone/CMYK colours; then each item with its specs, colour × size grid, player list and its own mock-ups; size charts and general pictures at the end.
+- **Usage:** the review screen shows how many tokens Gemini used for that order, and the home screen shows today's reads on that computer. A typical order uses 15,000–25,000 tokens; Google's free limit is counted in requests per day, per key, shared by everyone using that key.
 
 ## For developers
 
@@ -55,7 +57,7 @@ python3 -m http.server 8000
 | `index.html`, `css/app.css` | Page and styles |
 | `js/readers.js` | Turns any dropped file into text, PDFs and pictures for Gemini |
 | `js/gemini.js` | Picks the best free Flash model, sends the order, falls back on quota or errors |
-| `js/model.js` | The order record, size sorting, totals and the automatic checks |
+| `js/model.js` | The order record, size sorting, totals, the automatic checks, upgrading old saved orders |
 | `js/app.js` | Screens: intake, review, sheet, saved orders, settings |
 | `js/sheet-pdf.js` | The production sheet as a PDF (pdfmake) |
 | `js/sheet-xlsx.js` | The Excel copy (ExcelJS) |

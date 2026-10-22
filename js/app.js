@@ -31,7 +31,15 @@
     persist.flush();
     show("home");
     renderSetup();
+    renderUsage();
     await renderRecent();
+  }
+  // Google's free allowance is per key per day; everyone sharing the key shares it.
+  function renderUsage() {
+    const u = EO.usageToday();
+    $("#usageLine").textContent = u.reads
+      ? "Today on this computer: " + u.reads + (u.reads === 1 ? " order" : " orders") + " read, " + u.tokens.toLocaleString() + " tokens. The free daily limit is shared by everyone using the same key."
+      : "";
   }
 
   function icon(name) {
@@ -184,6 +192,7 @@
       if (res.truncated) o.checks.unshift({ id: EO.uid(), text: "Gemini's answer was cut short: compare the last items with the customer's order.", resolved: false });
       if (!o.items.length) o.items.push(EO.blankItem());
       o.readBy = res.model;
+      o.aiUsage = res.usage;
       o.warnings = input.warnings;
       order = o;
       await EO.saveOrder(order);
@@ -234,7 +243,7 @@
     const li = el("li", null,
       el("span", { class: "ono" + (o.orderNo ? "" : " draft"), text: o.orderNo ? o.orderNo + (o.rev > 1 ? " R" + o.rev : "") : "Draft" }),
       el("div", { class: "who2" },
-        el("b", { text: str(o.customer.name) || "Customer not named" }),
+        el("b", { text: [str(o.customer.name), str(o.customer.team)].filter(Boolean).join(" · ") || "Customer not named" }),
         el("span", { text: pcs + " pcs · " + o.items.length + (o.items.length === 1 ? " item" : " items") + (products ? " · " + products : "") + " · " + when.toLocaleDateString() })),
       el("div", { class: "btnrow" },
         el("button", { type: "button", class: "btn small", text: "Open", onclick: () => openOrder(o.id) }),
@@ -254,7 +263,7 @@
   async function renderOrders() {
     const all = await EO.listOrders();
     const q = str($("#ordersSearch").value).toLowerCase();
-    const hit = o => !q || [o.orderNo, o.customer.name, o.customerPo, o.customer.contact].concat(o.items.map(i => i.product + " " + i.styleRef))
+    const hit = o => !q || [o.orderNo, o.customer.name, o.customer.team, o.customerPo].concat(o.items.map(i => i.product + " " + i.styleRef))
       .join(" ").toLowerCase().indexOf(q) > -1;
     const list = all.filter(hit);
     $("#ordersCount").textContent = list.length + " of " + all.length;
@@ -265,14 +274,14 @@
   async function openOrder(id) {
     const o = await EO.getOrder(id);
     if (!o) { EO.toast("That order is gone.", "bad"); return; }
-    order = upgrade(o);
+    order = EO.upgradeOrder(o);
     openReview();
   }
   async function copyOrder(id) {
     const o = await EO.getOrder(id);
     if (!o) return;
-    const c = upgrade(JSON.parse(JSON.stringify(o)));
-    Object.assign(c, { id: EO.uid(), orderNo: "", rev: 0, issuedAt: 0, issuedDate: "", sharedRev: 0, changedSinceIssue: false, createdAt: Date.now(), updatedAt: Date.now(), orderDate: EO.todayISO(), shipBy: "", customerPo: "", readBy: "", warnings: [] });
+    const c = EO.upgradeOrder(JSON.parse(JSON.stringify(o)));
+    Object.assign(c, { id: EO.uid(), orderNo: "", rev: 0, issuedAt: 0, issuedDate: "", sharedRev: 0, changedSinceIssue: false, createdAt: Date.now(), updatedAt: Date.now(), orderDate: EO.todayISO(), shipBy: "", customerPo: "", readBy: "", aiUsage: null, warnings: [] });
     c.preparedBy = EO.settings().name || c.preparedBy;
     c.schedule = { cutting: "", stitching: "", qc: "", dispatch: "" };
     c.checks = []; c.resolvedAuto = [];
@@ -286,13 +295,12 @@
     await EO.deleteOrder(o.id);
     renderOrders();
   }
-  // Orders saved by older versions of the page get any fields they lack.
-  function upgrade(o) {
-    const b = EO.blankOrder();
-    for (const k of Object.keys(b)) if (o[k] === undefined) o[k] = b[k];
-    for (const k of ["customer", "artwork", "schedule", "packing"]) o[k] = Object.assign({}, b[k], o[k]);
-    o.items = (o.items || []).map(it => Object.assign(EO.blankItem(), it));
-    return o;
+  // Orders saved before contact details were dropped: rewrite them without phone, email or address.
+  async function scrubSaved() {
+    for (const o of await EO.listOrders()) {
+      const c = o.customer || {};
+      if (c.contact || c.phone || c.email || c.shipTo) await EO.saveOrder(EO.upgradeOrder(o));
+    }
   }
 
   /* ======================= review ======================= */
@@ -337,6 +345,34 @@
     if (o.help) wrap.append(el("span", { class: "help", text: o.help }));
     return wrap;
   }
+  // Rows of short fields (colour specs, construction lines) with add and remove.
+  function listEditor(list, cols, addLabel) {
+    const host = el("div", { style: "display:flex;flex-direction:column;gap:8px" });
+    const draw = () => {
+      const rows = list.map((row, i) => el("tr", null,
+        cols.map(c => {
+          const tag = c.area ? "textarea" : "input";
+          const x = el(tag, { value: row[c.key] || "", placeholder: c.ph || "", "aria-label": c.label, rows: c.area ? 2 : null, class: c.mono ? "mono" : "" });
+          x.addEventListener("input", () => { row[c.key] = x.value; touched(); });
+          return el("td", { style: c.width ? "width:" + c.width : "" }, x);
+        }),
+        el("td", { style: "width:34px" }, iconBtn("x", "Remove", () => { list.splice(i, 1); touched(); draw(); }, "danger"))));
+      host.replaceChildren(...[
+        list.length ? el("div", { style: "overflow-x:auto" }, el("table", { class: "roster" },
+          el("thead", null, el("tr", null, cols.map(c => el("th", { text: c.label })), el("th"))),
+          el("tbody", null, rows))) : null,
+        el("div", { class: "btnrow" }, el("button", { type: "button", class: "btn small", onclick: () => {
+          const row = { id: EO.uid() };
+          cols.forEach(c => { row[c.key] = ""; });
+          list.push(row); touched(); draw();
+          const ins = host.querySelectorAll("tbody tr:last-child input, tbody tr:last-child textarea");
+          if (ins[0]) ins[0].focus();
+        } }, icon("plus"), addLabel))].filter(Boolean));
+    };
+    draw();
+    return host;
+  }
+
   function panel(title, hint, body, attrs) {
     return el("div", Object.assign({ class: "panel" }, attrs || {}),
       el("header", null, el("h2", { text: title }), hint ? el("span", { class: "hint", text: hint }) : null),
@@ -356,8 +392,9 @@
     const parts = [top];
 
     if (order.readBy || (order.warnings && order.warnings.length)) {
+      const used = order.aiUsage && order.aiUsage.total ? " It used " + order.aiUsage.total.toLocaleString() + " tokens." : "";
       const n = el("div", { class: "note good" },
-        el("div", { text: order.readBy ? "Read by Gemini (" + order.readBy + "). Check every quantity against the customer's order before you make the sheet." : "Check every quantity against the customer's order." }));
+        el("div", { text: order.readBy ? "Read by Gemini (" + order.readBy + ")." + used + " Check every quantity against the customer's order before you make the sheet." : "Check every quantity against the customer's order." }));
       if (order.warnings && order.warnings.length) n.append(el("ul", null, order.warnings.map(w => el("li", { text: w }))));
       parts.push(n);
     }
@@ -366,22 +403,40 @@
 
     const nextNo = EO.peekNextNumber().text;
     parts.push(panel("Order", null, el("div", { class: "grid" },
-      field("Order no.", order, "orderNo", { mono: true, ph: nextNo, help: order.orderNo ? "" : "Given automatically when you make the sheet." }),
-      field("Customer PO", order, "customerPo", { mono: true }),
+      field("Our order no.", order, "orderNo", { mono: true, ph: nextNo, help: order.orderNo ? "" : "Given automatically when you make the sheet." }),
+      field("Customer order code", order, "customerPo", { mono: true, ph: "e.g. BP 347" }),
       field("Order received", order, "orderDate", { type: "date" }),
       field("Ship by", order, "shipBy", { type: "date", ph: "date or e.g. ASAP" }),
       field("Priority", order, "priority", { type: "select", options: EO.PRIORITIES }),
-      field("Prepared by", order, "preparedBy", { ph: s.name })
+      field("Prepared by", order, "preparedBy", { ph: s.name }),
+      field("Mock / design ref", order, "mockRef", { mono: true, ph: "e.g. C-53462" }),
+      field("Size chart", order, "sizeChart", { ph: "e.g. Bibs, Soccer" }),
+      field("Repeat of / based on", order, "repeatOf", { cls: "full", ph: "e.g. Same as BB:38, 504 except colours in Pantone PC" })
     )));
 
     const c = order.customer;
-    parts.push(panel("Customer", null, el("div", { class: "grid" },
-      field("Customer / club / brand", c, "name", { cls: "s2", onInput: refreshSums }),
-      field("Contact person", c, "contact"),
-      field("Phone", c, "phone", { mono: true }),
-      field("Email", c, "email", { cls: "s2" }),
-      field("Ship to", c, "shipTo", { type: "area", cls: "s2", rows: 3 })
+    parts.push(panel("Customer & team", "Contact details and addresses are never kept", el("div", { class: "grid" },
+      field("Customer / brand", c, "name", { cls: "s2", onInput: refreshSums, ph: "e.g. NuOla" }),
+      field("Team / design", c, "team", { cls: "s2", onInput: refreshSums, ph: "e.g. Augsburg Lions" })
     )));
+
+    parts.push(panel("Production notes", "Printed first on the sheet, in a box workers can't miss", el("div", { class: "grid" },
+      field("Notes for production", order, "notes", { type: "area", cls: "full", rows: 4, ph: "e.g. URGENT. Make sure all are perfect and free of defects." })
+    )));
+
+    const ap = order.approvals;
+    parts.push(panel("Approvals before production", "Yes, No, or details", el("div", { class: "grid" },
+      field("Graphic mock-up of every jersey", ap, "mockup", { ph: "Yes / No" }),
+      field("Pre-print / strike-off test", ap, "prePrint", { ph: "Yes / No" }),
+      field("Customer confirmation first", ap, "confirmation", { ph: "Yes / No" }),
+      field("Pre-production sample", ap, "sample", { ph: "Yes / No / details" })
+    )));
+
+    parts.push(panel("Colour specifications", "Pantone and CMYK codes for printing", listEditor(order.colourSpecs, [
+      { key: "name", label: "Colour", ph: "e.g. Royal Blue" },
+      { key: "pantone", label: "Pantone", ph: "e.g. Pantone 2738 PC", mono: true },
+      { key: "cmyk", label: "CMYK / values", ph: "e.g. C100 M84 Y0 K2", mono: true }
+    ], "Colour")));
 
     const itemsHost = el("div", { id: "itemsHost", style: "display:flex;flex-direction:column;gap:14px" });
     parts.push(panel("Items", "One card per garment. Colours down, sizes across.", [
@@ -392,15 +447,15 @@
     const a = order.artwork;
     parts.push(panel("Artwork & decoration", null, el("div", { class: "grid" },
       field("Files received", a, "files", { cls: "s2", ph: "logo files, mockups, what's still missing" }),
-      field("Colour codes / Pantone", a, "colourCodes", { cls: "s2" }),
-      field("Names & numbers", a, "namesNumbers", { cls: "s2", ph: "e.g. Back names + numbers, roster attached" }),
-      field("Pre-production sample", a, "sample", { cls: "s2", ph: "e.g. 1 sample per style, approve before bulk" }),
+      field("Names & numbers", a, "namesNumbers", { cls: "s2", ph: "e.g. Names and numbers on back, custom style" }),
+      field("Fonts", a, "fonts", { cls: "s2", ph: "e.g. As per mock" }),
+      field("Logos", a, "logos", { cls: "s2", ph: "e.g. NuOla logo centred with team logo" }),
       field("Artwork notes", a, "notes", { type: "area", cls: "full", rows: 2 })
     )));
 
     const picsHost = el("div", { id: "picsHost" });
     const picIn = el("input", { type: "file", accept: "image/*,.pdf", multiple: true, hidden: true, onchange: e => { addPictureFiles(e.target.files); e.target.value = ""; } });
-    parts.push(panel("Artwork & reference pictures", "Printed on the sheet with their item number", [
+    parts.push(panel("Pictures", "An item's pictures print under that item; general ones (size charts) at the end", [
       picsHost,
       el("div", { class: "btnrow" }, el("button", { type: "button", class: "btn", onclick: () => picIn.click() }, icon("plus"), "Add pictures"), picIn)
     ]));
@@ -417,8 +472,7 @@
     parts.push(panel("Packing & dispatch", null, el("div", { class: "grid" },
       field("Packing", p, "packing", { type: "area", cls: "full", rows: 2, ph: "polybags, fold, pack per size / per player, cartons" }),
       field("Labels & tags", p, "labels", { cls: "s2" }),
-      field("Shipping method", p, "shipping", { cls: "s2" }),
-      field("Notes for production", order, "notes", { type: "area", cls: "full", rows: 3 })
+      field("Shipping method", p, "shipping", { cls: "s2" })
     )));
 
     if (order.sourceText || (order.sources && order.sources.length)) {
@@ -471,7 +525,7 @@
     add.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); addIt(); } });
     const open = EO.openChecks(order).length;
     const body = [
-      el("p", { class: "lead", text: open ? "Unticked lines print in an orange box at the top of the sheet. Tick a line once it's confirmed or fixed." : "Nothing open. Add anything you still need to confirm." }),
+      el("p", { class: "lead", text: open ? "Unticked lines print in a red box at the top of the sheet. Tick a line once it's confirmed or fixed." : "Nothing open. Add anything you still need to confirm." }),
       order.checks.length || auto.length ? list : null,
       el("div", { class: "quick" }, add, el("button", { type: "button", class: "btn", text: "Add", onclick: addIt }))
     ];
@@ -491,7 +545,7 @@
     if (bar) {
       bar.replaceChildren(
         el("span", { class: "ono" + (order.orderNo ? "" : " draft"), text: order.orderNo ? order.orderNo + (order.rev > 1 ? " R" + order.rev : "") : "Draft" }),
-        el("div", { class: "t" }, el("b", { text: str(order.customer.name) || "Customer not named yet" }),
+        el("div", { class: "t" }, el("b", { text: [str(order.customer.name), str(order.customer.team)].filter(Boolean).join(" · ") || "Customer not named yet" }),
           el("span", { text: pcs + " pcs · " + n + (n === 1 ? " item" : " items") + (order.customerPo ? " · PO " + order.customerPo : "") })));
     }
     $("#actionSum").replaceChildren(el("b", { text: String(pcs) }), " pcs · " + n + (n === 1 ? " item" : " items") + " · ",
@@ -540,13 +594,21 @@
 
     const coloursField = field("Colours", it, "colours", { cls: "s2", ph: "From the rows below: " + (EO.itemColours(Object.assign({}, it, { colours: "" })) || "e.g. Navy, White") });
     const specs = el("div", { class: "grid" },
-      field("Style ref", it, "styleRef", { mono: true }),
-      field("Decoration", it, "decoration", { ph: "Embroidery, Screen print, DTF…" }),
+      field("Style / mock ref", it, "styleRef", { mono: true }),
+      field("Print method", it, "decoration", { ph: "Sublimation, Embroidery, DTF…" }),
+      field("Fabric", it, "fabric", { cls: "s2", ph: "e.g. Standard Jacquard, Interlock, Fleece 320 gsm" }),
       coloursField,
-      field("Fabric & weight", it, "fabric", { cls: "s2", ph: "e.g. Fleece 320 gsm, 80/20 cotton-poly" }),
-      field("Placements", it, "placements", { cls: "s2", ph: "e.g. Left chest 8 cm, full back 28 cm" }),
-      field("Trims & labels", it, "trims", { cls: "full", ph: "zips, drawcords, rib, neck label, hangtag…" }),
+      field("Cut / fit", it, "fit", { ph: "e.g. Male, fitted" }),
+      field("Single / reversible", it, "sides", { ph: "Single or Reversible" }),
+      field("Logos & placements", it, "placements", { cls: "s2", ph: "e.g. Left chest 8 cm, number on back" }),
+      field("Trims & labels", it, "trims", { cls: "s2", ph: "neck and arm trims, hood, zips, labels…" }),
       field("Item notes", it, "notes", { type: "area", cls: "full", rows: 2 }));
+    const specLines = el("div", { style: "display:flex;flex-direction:column;gap:6px" },
+      el("span", { class: "flabel", text: "Construction & design details" }),
+      listEditor(it.specs, [
+        { key: "label", label: "Part", ph: "e.g. Neck, Hood, Side 1 front", width: "28%" },
+        { key: "value", label: "Instruction", ph: "e.g. Curved V-neck, white trim from a separate piece", area: true }
+      ], "Detail"));
 
     const gridHost = el("div");
     const drawGrid = () => gridHost.replaceChildren(qtyEditor(it, drawGrid));
@@ -555,7 +617,7 @@
     const stated = field("Customer's own total", it, "statedTotal", { mono: true, number: true, ph: "if they wrote one", help: "Only used to check the sizes add up." });
     stated.style.maxWidth = "220px";
 
-    return el("div", { class: "item" }, head, el("div", { class: "item-body" }, specs, gridHost, stated, rosterEditor(it, drawGrid)));
+    return el("div", { class: "item" }, head, el("div", { class: "item-body" }, specs, specLines, gridHost, stated, rosterEditor(it, drawGrid)));
   }
 
   function parseQuick(line) {
@@ -671,7 +733,7 @@
   function parseRosterLine(line) {
     let toks = line.split(/\t|\s*[,;|]\s*|\s{2,}/).map(x => x.trim()).filter(Boolean);
     if (toks.length === 1) toks = toks[0].split(/\s+/); // "#23 Bilal Khan XL"
-    const p = { id: EO.uid(), name: "", number: "", size: "", qty: "", notes: "" };
+    const p = EO.blankPlayer();
     const nameParts = [];
     for (const t of toks) {
       const ns = EO.normSize(t);
@@ -688,24 +750,43 @@
     const det = el("details", { class: "sub" });
     if (it.roster.length) det.open = true;
     const body = el("div");
+    const label = () => "Players: names, numbers & sizes (" + it.roster.length + ")";
     const draw = () => {
+      const cols = it.rosterCols;
       const rows = it.roster.map((p, i) => {
         const inp = (k, w, ph) => {
-          const x = el("input", { value: p[k] == null ? "" : p[k], placeholder: ph || "", style: w ? "width:" + w : "" , "aria-label": k });
-          x.addEventListener("input", () => { p[k] = k === "qty" ? (x.value === "" ? "" : int(x.value)) : x.value; touched(); sum.textContent = "Roster: names & numbers (" + it.roster.length + ")"; });
+          const x = el("input", { value: p[k] == null ? "" : p[k], placeholder: ph || "", style: w ? "width:" + w : "", "aria-label": k });
+          x.addEventListener("input", () => { p[k] = k === "qty" ? (x.value === "" ? "" : int(x.value)) : x.value; touched(); });
+          return el("td", null, x);
+        };
+        const extra = k => {
+          const x = el("input", { value: (p.extra && p.extra[k]) || "", "aria-label": k, style: "min-width:90px" });
+          x.addEventListener("input", () => { p.extra = p.extra || {}; p.extra[k] = x.value; touched(); });
           return el("td", null, x);
         };
         return el("tr", null, el("td", { class: "mono", style: "color:var(--muted);width:30px", text: String(i + 1) }),
-          inp("name", "", "Name"), inp("number", "70px", "No."), inp("size", "70px", "Size"), inp("qty", "60px", "1"), inp("notes", "", ""),
+          inp("name", "170px", "Name"), inp("number", "70px", "No."), inp("size", "70px", "Size"), inp("qty", "60px", "1"),
+          cols.map(extra), inp("notes", "", ""),
           el("td", null, iconBtn("x", "Remove player", () => { it.roster.splice(i, 1); touched(); draw(); }, "danger")));
       });
+      const colHead = k => el("th", null, el("span", { text: k + " " }), iconBtn("x", "Remove column " + k, () => {
+        if (!confirm("Remove the " + k + " column?")) return;
+        it.rosterCols = it.rosterCols.filter(x => x !== k);
+        it.roster.forEach(p => { if (p.extra) delete p.extra[k]; });
+        touched(); draw();
+      }));
       const paste = el("textarea", { class: "in", rows: 3, placeholder: "Paste a list, one player per line: Name, Number, Size (Excel columns work too)" });
       body.replaceChildren(
         it.roster.length ? el("div", { style: "overflow-x:auto" }, el("table", { class: "roster" },
-          el("thead", null, el("tr", null, ["#", "Name", "Number", "Size", "Qty", "Notes", ""].map(h => el("th", { text: h })))),
+          el("thead", null, el("tr", null, ["#", "Name", "Number", "Size", "Qty"].map(h => el("th", { text: h })), cols.map(colHead), el("th", { text: "Notes" }), el("th"))),
           el("tbody", null, rows))) : el("div", { class: "help", text: "For team orders: player names, numbers and sizes. Leave empty if there's none." }),
         el("div", { class: "btnrow" },
-          el("button", { type: "button", class: "btn small", onclick: () => { it.roster.push({ id: EO.uid(), name: "", number: "", size: "", qty: "", notes: "" }); touched(); draw(); } }, icon("plus"), "Player"),
+          el("button", { type: "button", class: "btn small", onclick: () => { it.roster.push(EO.blankPlayer()); touched(); draw(); } }, icon("plus"), "Player"),
+          el("button", { type: "button", class: "btn small", onclick: () => {
+            const k = str(prompt("Name of the new column (e.g. Length, Chest, Tailored, Sleeves):"));
+            if (!k || it.rosterCols.some(x => x.toLowerCase() === k.toLowerCase())) return;
+            it.rosterCols.push(k); touched(); draw();
+          } }, icon("plus"), "Column"),
           it.roster.length ? el("button", { type: "button", class: "btn small", text: "Count roster into the size grid", onclick: () => {
             if (EO.gridTotal(it) && !confirm("Replace the size grid with the roster's counts?")) return;
             EO.gridFromRoster(it); touched(); redrawGrid();
@@ -717,7 +798,7 @@
           if (!added.length) { EO.toast("No players found in that list."); return; }
           it.roster.push(...added); touched(); draw();
         } })));
-      sum.textContent = "Roster: names & numbers (" + it.roster.length + ")";
+      sum.textContent = label();
     };
     const sum = el("summary");
     det.append(sum, body);
@@ -791,7 +872,7 @@
     $("#sheetNo").textContent = order.orderNo + (order.rev > 1 ? " R" + order.rev : "");
     const open = EO.openChecks(order);
     $("#sheetNote").replaceChildren(open.length
-      ? el("div", { class: "note" }, open.length + (open.length === 1 ? " thing is" : " things are") + " still to confirm with the customer. " + (open.length === 1 ? "It's" : "They're") + " printed in the orange box at the top of the sheet.")
+      ? el("div", { class: "note" }, open.length + (open.length === 1 ? " thing is" : " things are") + " still to confirm with the customer. " + (open.length === 1 ? "It's" : "They're") + " printed in the red box at the top of the sheet.")
       : el("div", { class: "note good", text: "Everything is confirmed. Download the PDF for production, or print it." }));
     const prev = $("#preview");
     prev.replaceChildren(el("div", { class: "progress", style: "width:100%;max-width:820px" }, el("div", { class: "spin" }), el("div", { class: "msg", text: "Drawing the sheet…" })));
@@ -942,7 +1023,7 @@
     try {
       const data = JSON.parse(await f.text());
       const list = Array.isArray(data.orders) ? data.orders : [];
-      for (const o of list) if (o && o.id && o.items) await EO.saveOrder(upgrade(o));
+      for (const o of list) if (o && o.id && o.items) await EO.saveOrder(EO.upgradeOrder(o));
       EO.toast(list.length + " orders restored.");
       renderRecent();
     } catch (err) { EO.toast("That isn't an order backup file.", "bad"); }
@@ -961,6 +1042,7 @@
   window.addEventListener("hashchange", () => { if (readSetupLink()) renderSetup(); });
   renderWho();
   goHome();
+  scrubSaved().catch(() => {});
 
   // Exposed for tests and the console.
   EO.app = { get order() { return order; }, openOrder, makeSheet, renderReview };

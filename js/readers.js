@@ -452,9 +452,68 @@
   const u32 = (b, o) => (b[o] | (b[o + 1] << 8) | (b[o + 2] << 16) | (b[o + 3] << 24)) >>> 0;
   const dec = (enc, bytes) => { try { return new TextDecoder(enc).decode(bytes); } catch (e) { return ""; } };
 
-  // Word 97-2003: follow the piece table to the real text (no images; those need the newer .docx).
-  async function readDoc(file) {
+  // Pictures inside an old Office file: JPEG and PNG data sit whole inside its streams, so find
+  // them by their signatures and cut them out. (EMF/WMF drawings can't be shown in a browser.)
+  const be32 = (b, o) => ((b[o] << 24) | (b[o + 1] << 16) | (b[o + 2] << 8) | b[o + 3]) >>> 0;
+  function jpegEnd(b, start) {
+    let p = start + 2;
+    while (p + 4 <= b.length) {
+      if (b[p] !== 0xFF) return -1;
+      while (b[p + 1] === 0xFF && p + 2 < b.length) p++;
+      const m = b[p + 1];
+      if (m === 0xD9) return p + 2;
+      if (m === 0x01 || (m >= 0xD0 && m <= 0xD7)) { p += 2; continue; }
+      const len = (b[p + 2] << 8) | b[p + 3];
+      if (len < 2) return -1;
+      p += 2 + len;
+      if (m === 0xDA) { // scan data runs to the next real marker
+        while (p + 1 < b.length && !(b[p] === 0xFF && b[p + 1] !== 0x00 && !(b[p + 1] >= 0xD0 && b[p + 1] <= 0xD7))) p++;
+      }
+    }
+    return -1;
+  }
+  function carveImages(b) {
+    const out = [];
+    for (let i = 0; i + 12 < b.length; i++) {
+      if (b[i] === 0x89 && b[i + 1] === 0x50 && b[i + 2] === 0x4E && b[i + 3] === 0x47 && b[i + 4] === 0x0D && b[i + 5] === 0x0A && b[i + 6] === 0x1A && b[i + 7] === 0x0A) {
+        let p = i + 8, end = -1;
+        while (p + 12 <= b.length) {
+          const len = be32(b, p);
+          const type = String.fromCharCode(b[p + 4], b[p + 5], b[p + 6], b[p + 7]);
+          if (len > b.length) break;
+          p += 12 + len;
+          if (type === "IEND") { end = p; break; }
+        }
+        if (end > 0 && end <= b.length) { out.push({ type: "image/png", data: b.slice(i, end) }); i = end - 1; }
+      } else if (b[i] === 0xFF && b[i + 1] === 0xD8 && b[i + 2] === 0xFF) {
+        const end = jpegEnd(b, i);
+        if (end > 0) { out.push({ type: "image/jpeg", data: b.slice(i, end) }); i = end - 1; }
+      }
+    }
+    return out;
+  }
+  async function cfbPictures(cfb, file, ctx) {
+    const seen = new Set();
+    let n = 0;
+    for (const entry of cfb.FileIndex) {
+      if (!entry || !entry.content || entry.content.length < 2048) continue;
+      const bytes = entry.content instanceof Uint8Array ? entry.content : Uint8Array.from(entry.content);
+      for (const img of carveImages(bytes)) {
+        if (img.data.length < 3000) continue;
+        const key = img.data.length + ":" + Array.from(img.data.subarray(img.data.length - 32)).join(",");
+        if (seen.has(key)) continue;
+        seen.add(key);
+        if (await ctx.addPicture(new Blob([img.data], { type: img.type }), file.name + " / picture " + (++n))) { /* added */ }
+        if (n >= 30) return;
+      }
+    }
+  }
+
+  // Word 97-2003: follow the piece table to the real text, then cut out the pictures.
+  async function readDoc(file, ctx) {
     const cfb = await cfbOf(file);
+    try { await cfbPictures(cfb, file, ctx); }
+    catch (e) { ctx.warnings.push("Pictures couldn't be pulled out of " + file.name + "; add them by hand if needed."); }
     const w = cfbStream(cfb, "/WordDocument");
     if (!w) throw new Error("not a Word file");
     const tableName = (w[0x0A] | (w[0x0B] << 8)) & 0x0200 ? "/1Table" : "/0Table";
@@ -621,7 +680,7 @@
     }
     if (ext === "doc" || ext === "dot") {
       let t;
-      try { t = "(old Word file)\n" + await readDoc(file); }
+      try { t = "(old Word file; its pictures are listed above)\n" + await readDoc(file, ctx); }
       catch (e) { t = "(old Word file; text recovered roughly, ignore garbage)\n" + binaryStrings(await file.arrayBuffer()); }
       ctx.addText("=== FILE: " + label + " " + t);
       return;

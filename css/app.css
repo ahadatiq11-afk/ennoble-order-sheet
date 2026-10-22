@@ -204,6 +204,18 @@ legend { font-family: var(--font-display); font-size: 15px; letter-spacing: .09e
 ol.steps { margin: 0; padding-left: 20px; font-size: 14px; display: flex; flex-direction: column; gap: 4px; }
 .logo-prev { max-height: 48px; max-width: 160px; border: 1px solid var(--line); border-radius: 3px; background: #fff; }
 
+/* ---------- lock screen & access ---------- */
+.lock { position: fixed; inset: 0; z-index: 80; background: var(--paper); display: grid; place-items: center; padding: var(--gutter); overflow-y: auto; }
+.lock-card { width: min(420px, 100%); background: var(--surface); border: 1px solid var(--line); border-top: 4px solid var(--accent); border-radius: 8px; padding: 26px 22px; display: flex; flex-direction: column; gap: 12px; text-align: center; }
+.lock-logo { height: 54px; width: auto; align-self: center; }
+.lock-card h1 { font-size: 24px; letter-spacing: .04em; }
+.lock-card .in { text-align: center; font-size: 16px; padding: 10px; }
+body.locked .topbar, body.locked main, body.locked .actionbar { display: none !important; }
+.choice { display: flex; flex-direction: column; gap: 4px; margin: 2px 0 4px; font-size: 14px; }
+.choice label, label.check { display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 14px; }
+.choice input, label.check input { accent-color: var(--accent); width: 16px; height: 16px; }
+fieldset[disabled] { opacity: .55; }
+
 #toast { position: fixed; left: 50%; bottom: 84px; transform: translate(-50%, 20px); opacity: 0; pointer-events: none; z-index: 60;
   background: var(--ink); color: #fff; padding: 10px 16px; border-radius: 6px; font-size: 14px; max-width: calc(100vw - 32px); transition: opacity .2s, transform .2s; }
 #toast.show { opacity: 1; transform: translate(-50%, 0); }

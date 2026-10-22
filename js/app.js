@@ -73,22 +73,126 @@
     if (!need) return;
     if (!$("#suName").value) $("#suName").value = s.name;
     if (!$("#suIni").value) $("#suIni").value = s.initials;
-    if (!$("#suKey").value) $("#suKey").value = s.apiKey;
-    $("#suKeyHelp").textContent = s.apiKey ? "Key already added from the setup link." : "Filled in for you if you opened a setup link.";
+    const prot = EO.vault.isProtected();
+    const hasCompany = prot && !!EO.vault.secrets().companyKey;
+    $("#suChoice").hidden = !hasCompany;
+    $("#suOwnWrap").hidden = !s.allowOwnKey;
+    if (!s.allowOwnKey) $("#suCompany").checked = true;
+    const own = !hasCompany || $("#suOwn").checked;
+    $("#suKey").hidden = !own;
+    if (!prot && !$("#suKey").value) $("#suKey").value = s.apiKey;
+    $("#suKeyHelp").textContent = hasCompany
+      ? (own ? "Your own free key from aistudio.google.com/apikey. Orders you read then use your own daily allowance." : "The company key came with your link: nothing to paste.")
+      : (s.apiKey ? "Key already added from the setup link." : "Paste a free key from aistudio.google.com/apikey.");
     $("#suIniPrev").textContent = EO.cleanInitials($("#suIni").value) || "AA";
   }
+  ["#suCompany", "#suOwn"].forEach(id => $(id).addEventListener("change", renderSetup));
   $("#suIni").addEventListener("input", () => { $("#suIniPrev").textContent = EO.cleanInitials($("#suIni").value) || "AA"; });
   $("#suSave").addEventListener("click", async () => {
     const name = str($("#suName").value), ini = EO.cleanInitials($("#suIni").value), key = str($("#suKey").value);
+    const prot = EO.vault.isProtected(), sec = EO.vault.secrets();
+    const useOwn = !prot || !sec.companyKey || $("#suOwn").checked;
     if (!name || !ini) { $("#suMsg").textContent = "Type your name and initials."; return; }
-    if (!key) { $("#suMsg").textContent = "Add the Gemini key (or open the setup link you were sent)."; return; }
-    EO.saveSettings({ name, initials: ini, apiKey: key });
+    if (useOwn && !key && !(prot && sec.ownKey)) { $("#suMsg").textContent = "Paste your Gemini key (or open the worker link you were sent)."; return; }
+    if (prot) {
+      await EO.vault.setSecrets({ useOwn, ownKey: useOwn && key ? key : sec.ownKey });
+      EO.saveSettings({ name, initials: ini });
+    } else EO.saveSettings({ name, initials: ini, apiKey: key });
     $("#suMsg").textContent = "Checking the key…";
-    try { const m = await EO.testKey(key); EO.toast("All set. Gemini (" + m + ") is ready."); }
+    try { const m = await EO.testKey(EO.settings().apiKey); EO.toast("All set. Gemini (" + m + ") is ready."); }
     catch (e) { EO.toast("Saved, but the key test failed: " + EO.geminiFriendly(e), "bad"); }
     $("#suMsg").textContent = "";
     renderWho();
     renderSetup();
+  });
+
+  /* ---------- lock screen and password prompts ---------- */
+  // Shows the full-screen lock until check(password) returns true; any string it returns is shown as the error.
+  function showLock(title, msg, check) {
+    return new Promise(resolve => {
+      document.body.classList.add("locked");
+      $("#lock").hidden = false;
+      $("#lockTitle").textContent = title;
+      $("#lockMsg").textContent = msg;
+      $("#lockErr").textContent = "";
+      $("#lockPw").value = "";
+      setTimeout(() => $("#lockPw").focus(), 50);
+      $("#lockForm").onsubmit = async e => {
+        e.preventDefault();
+        const pw = $("#lockPw").value;
+        if (!pw) return;
+        $("#lockGo").disabled = true;
+        $("#lockErr").textContent = "Checking…";
+        let res;
+        try { res = await check(pw); } catch (err) { res = err && err.message ? err.message : "Something went wrong."; }
+        if (res === true) {
+          $("#lock").hidden = true;
+          document.body.classList.remove("locked");
+          $("#lockGo").disabled = false;
+          resolve();
+          return;
+        }
+        $("#lockErr").textContent = res || "That password isn't right.";
+        $("#lockPw").select();
+        setTimeout(() => { $("#lockGo").disabled = false; }, 900); // slows down guessing
+      };
+    });
+  }
+  function askPassword(title, msg) {
+    return new Promise(resolve => {
+      const d = $("#pwDialog");
+      $("#pwTitle").textContent = title;
+      $("#pwMsg").textContent = msg;
+      $("#pwInput").value = "";
+      d.onclose = () => resolve(d.returnValue === "ok" ? $("#pwInput").value : null);
+      d.returnValue = "";
+      d.showModal();
+      $("#pwInput").focus();
+    });
+  }
+  $("#pwInput").addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); $("#pwDialog").close("ok"); } });
+
+  // A worker opened the link: unlock its settings with the company password and set this computer up.
+  async function joinFlow(packed) {
+    await showLock("Welcome to the Ennoble Order Sheet", "Type the company password your manager gave you. You only do this once on this computer.", async pw => {
+      const cfg = await EO.vault.readJoin(packed, pw);
+      if (!cfg) return "That password doesn't open this link.";
+      const before = EO.settings();
+      if (EO.vault.isProtected()) {
+        if (!(await EO.vault.unlock(pw))) {
+          const old = await askPassword("Old company password", "This computer was set up with a different company password. Type the old one to keep its saved orders, or press Cancel to continue without them.");
+          if (old && await EO.vault.unlock(old)) await EO.vault.changePassword(pw);
+          else {
+            EO.vault.destroy();
+            await EO.vault.create(pw, {});
+            for (const r of await EO.rawOrders()) if (r.enc) await EO.deleteOrder(r.id); // unreadable without the old password
+          }
+        }
+      } else {
+        await EO.vault.create(pw, { ownKey: before.apiKey || "" });
+      }
+      const sec = EO.vault.secrets();
+      await EO.vault.setSecrets({ companyKey: cfg.key || "", useOwn: cfg.key ? (cfg.own !== false && sec.useOwn && !!sec.ownKey) : true });
+      EO.saveSettings({
+        companyName: cfg.co || before.companyName,
+        companyTagline: cfg.tg != null ? cfg.tg : before.companyTagline,
+        admin: cfg.admin || null,
+        allowOwnKey: cfg.own !== false
+      });
+      await EO.encryptOrders();
+      EO.toast("You're in. Type your name and initials to finish.");
+      return true;
+    });
+  }
+  function unlockFlow() {
+    return showLock("Enter the company password", "This tool is locked. Ask your manager for the password.",
+      async pw => ((await EO.vault.unlock(pw)) ? true : "That password isn't right."));
+  }
+  function renderNav() { $("#navLock").hidden = !EO.vault.isProtected(); }
+  $("#navLock").addEventListener("click", async () => {
+    if (order) await EO.saveOrder(order);
+    EO.vault.lock();
+    location.reload();
   });
 
   // A colleague opened the setup link: take the key out of the address and keep it in this browser.
@@ -947,19 +1051,67 @@
 
   /* ======================= settings ======================= */
   let nextEdited = false;
+  // Who may change what: without an admin password everyone may; with one, only after unlocking.
+  function applyAccess() {
+    const prot = EO.vault.isProtected();
+    const admin = EO.vault.isAdmin();
+    $("#stAdminBar").hidden = admin;
+    EO.$$("#settings fieldset.admin-only").forEach(f => { f.disabled = !admin; });
+    $("#stAccessFs").hidden = $("#stShareFs").hidden = !admin; // the admin's business only
+    $("#stCompanyWrap").hidden = !(prot && admin);
+    $("#stRestore").hidden = !admin;
+    $("#stProtOff").hidden = prot;
+    $("#stProtOn").hidden = !prot;
+    $("#stLinkOn").hidden = !prot;
+    $("#stLinkOff").hidden = prot;
+    keyState();
+  }
+  function keyState() {
+    const prot = EO.vault.isProtected();
+    const s = EO.settings();
+    const hasCompany = prot && !!EO.vault.secrets().companyKey;
+    $("#stChoice").hidden = !hasCompany;
+    $("#stOwnWrap").hidden = !(s.allowOwnKey || EO.vault.isAdmin());
+    const own = !hasCompany || $("#stUseOwn").checked;
+    $("#stKeyRow").hidden = !own;
+    $("#stKeyMsg").replaceChildren(...(hasCompany && !own
+      ? ["Orders are read with the company key."]
+      : ["Free key from ", el("a", { href: "https://aistudio.google.com/apikey", target: "_blank", rel: "noopener", text: "aistudio.google.com/apikey" }), ". It stays in this browser only" + (prot ? ", encrypted." : ".")]));
+  }
+  ["#stUseCompany", "#stUseOwn"].forEach(id => $(id).addEventListener("change", keyState));
   function openSettings() {
     const s = EO.settings();
-    $("#stName").value = s.name; $("#stIni").value = s.initials; $("#stKey").value = s.apiKey;
+    const prot = EO.vault.isProtected(), sec = EO.vault.secrets();
+    $("#stName").value = s.name; $("#stIni").value = s.initials;
+    if (prot) {
+      $("#stUseCompany").checked = !sec.useOwn || !sec.ownKey;
+      $("#stUseOwn").checked = !$("#stUseCompany").checked;
+      $("#stKey").value = sec.ownKey;
+      $("#stKey").placeholder = "Paste your own key";
+      $("#stCompanyKey").value = sec.companyKey;
+    } else {
+      $("#stKey").value = s.apiKey;
+      $("#stKey").placeholder = "Paste the key";
+    }
     $("#stKey").type = "password"; $("#stKeyShow").textContent = "Show";
     $("#stCo").value = s.companyName; $("#stTag").value = s.companyTagline;
     const p = EO.peekNextNumber();
     $("#stNext").value = p.n; nextEdited = false;
     $("#stNextPrev").textContent = p.text;
-    $("#stKeyMsg").replaceChildren("Free key from ", el("a", { href: "https://aistudio.google.com/apikey", target: "_blank", rel: "noopener", text: "aistudio.google.com/apikey" }), ". It stays in this browser only.");
-    $("#stLinkMsg").textContent = "";
+    ["#stLinkMsg", "#stJoinMsg", "#stProtMsg", "#stProtMsg2", "#stAdminMsg"].forEach(id => { $(id).textContent = ""; });
+    ["#stPw1", "#stPw2", "#stAd1", "#stAd2", "#stNewPw", "#stNewAd", "#stAdminPw"].forEach(id => { $(id).value = ""; });
+    $("#stAllowOwn").checked = s.allowOwnKey !== false;
+    $("#stIncKey").checked = true;
     setLogo(s.logo);
-    $("#settings").showModal();
+    applyAccess();
+    if (!$("#settings").open) $("#settings").showModal();
   }
+  $("#stAdminUnlock").addEventListener("click", async () => {
+    $("#stAdminMsg").textContent = "Checking…";
+    if (await EO.vault.checkAdmin($("#stAdminPw").value)) { $("#stAdminMsg").textContent = ""; applyAccess(); }
+    else $("#stAdminMsg").textContent = "That isn't the admin password.";
+  });
+  $("#stAdminPw").addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); $("#stAdminUnlock").click(); } });
   let pendingLogo = null;
   function setLogo(d) {
     pendingLogo = d || "";
@@ -986,6 +1138,68 @@
     try { const m = await EO.testKey(key); $("#stKeyMsg").textContent = "The key works. Orders will be read by " + m + "."; }
     catch (e) { $("#stKeyMsg").textContent = EO.geminiFriendly(e); }
   });
+
+  /* ---------- password protection (admin) ---------- */
+  $("#stProtect").addEventListener("click", async () => {
+    const p1 = $("#stPw1").value, p2 = $("#stPw2").value, a1 = $("#stAd1").value, a2 = $("#stAd2").value;
+    const say = t => { $("#stProtMsg").textContent = t; };
+    if (p1.length < 8 || a1.length < 8) return say("Use at least 8 characters for both passwords.");
+    if (p1 !== p2) return say("The two company passwords don't match.");
+    if (a1 !== a2) return say("The two admin passwords don't match.");
+    if (a1 === p1) return say("Use a different admin password from the company password.");
+    const key = str($("#stKey").value) || EO.settings().apiKey;
+    say("Turning on…");
+    await EO.vault.create(p1, { companyKey: key, ownKey: "", useOwn: false });
+    EO.saveSettings({ admin: await EO.vault.makeAdmin(a1), allowOwnKey: true });
+    await EO.vault.checkAdmin(a1);
+    await EO.encryptOrders();
+    renderNav();
+    openSettings();
+    EO.toast("Password protection is on. Copy the worker link below for your team.");
+  });
+  $("#stChangePw").addEventListener("click", async () => {
+    const pw = $("#stNewPw").value;
+    if (pw.length < 8) { $("#stProtMsg2").textContent = "Use at least 8 characters."; return; }
+    await EO.vault.changePassword(pw);
+    $("#stNewPw").value = "";
+    $("#stProtMsg2").textContent = "Changed on this computer. Copy a new worker link and tell workers the new password. People who know the old password and kept the old link can still read the key in it: if that worries you, also make a new Gemini key.";
+  });
+  $("#stChangeAd").addEventListener("click", async () => {
+    const pw = $("#stNewAd").value;
+    if (pw.length < 8) { $("#stProtMsg2").textContent = "Use at least 8 characters."; return; }
+    EO.saveSettings({ admin: await EO.vault.makeAdmin(pw) });
+    await EO.vault.checkAdmin(pw);
+    $("#stNewAd").value = "";
+    $("#stProtMsg2").textContent = "Admin password changed on this computer. New worker links carry it; computers set up with older links keep the old one until they open a new link.";
+  });
+  $("#stUnprotect").addEventListener("click", async () => {
+    if (!confirm("Turn off the password on this computer? Saved orders here will be stored unencrypted again.")) return;
+    const sec = EO.vault.secrets();
+    await EO.rewriteOrders();
+    EO.vault.destroy();
+    EO.saveSettings({ admin: null, apiKey: sec.useOwn && sec.ownKey ? sec.ownKey : sec.companyKey });
+    renderNav();
+    openSettings();
+    EO.toast("Password turned off on this computer.");
+  });
+  $("#stCopyJoin").addEventListener("click", async () => {
+    const s = EO.settings();
+    const companyKey = str($("#stCompanyKey").value) || EO.vault.secrets().companyKey;
+    const includeKey = $("#stIncKey").checked;
+    if (includeKey && !companyKey) { $("#stJoinMsg").textContent = "Add the company key above first."; return; }
+    const pw = await askPassword("Company password", "Type the company password. The link is locked with it, so a link on its own is useless.");
+    if (!pw) return;
+    const allowOwn = $("#stAllowOwn").checked;
+    try {
+      const link = await EO.vault.makeJoinLink(pw, {
+        v: 1, key: includeKey ? companyKey : "", co: str($("#stCo").value) || s.companyName,
+        tg: $("#stTag").value, admin: s.admin, own: allowOwn || !includeKey
+      });
+      EO.saveSettings({ allowOwnKey: allowOwn });
+      try { await navigator.clipboard.writeText(link); $("#stJoinMsg").textContent = "Copied. Send the link, and tell them the password separately."; }
+      catch (e) { prompt("Copy this worker link:", link); }
+    } catch (e) { $("#stJoinMsg").textContent = e.message; }
+  });
   $("#stCopyLink").addEventListener("click", async () => {
     const key = str($("#stKey").value);
     if (!key) { $("#stLinkMsg").textContent = "Add the key first."; return; }
@@ -1010,36 +1224,60 @@
       setLogo(cv.toDataURL("image/png"));
     } catch (err) { EO.toast("That logo couldn't be opened. Try a PNG or JPG.", "bad"); }
   });
-  $("#stSave").addEventListener("click", e => {
+  $("#stSave").addEventListener("click", async e => {
     e.preventDefault();
-    const ini = EO.cleanInitials($("#stIni").value);
-    EO.saveSettings({
-      name: str($("#stName").value), initials: ini, apiKey: str($("#stKey").value),
-      companyName: str($("#stCo").value) || "Ennoble International", companyTagline: $("#stTag").value, logo: pendingLogo
-    });
-    if (nextEdited && ini) EO.setNextNumber(int($("#stNext").value) || 1);
+    const prot = EO.vault.isProtected(), admin = EO.vault.isAdmin();
+    if (prot) {
+      const sec = EO.vault.secrets();
+      const companyKey = admin ? str($("#stCompanyKey").value) : sec.companyKey;
+      const useOwn = !companyKey || $("#stUseOwn").checked;
+      const ownKey = str($("#stKey").value);
+      if (useOwn && !ownKey) { EO.toast("Paste your own key, or choose the company key.", "bad"); return; }
+      await EO.vault.setSecrets({ companyKey, useOwn, ownKey });
+    }
+    if (admin) {
+      const ini = EO.cleanInitials($("#stIni").value);
+      const patch = {
+        name: str($("#stName").value), initials: ini,
+        companyName: str($("#stCo").value) || "Ennoble International", companyTagline: $("#stTag").value, logo: pendingLogo
+      };
+      if (!prot) patch.apiKey = str($("#stKey").value);
+      EO.saveSettings(patch);
+      if (nextEdited && ini) EO.setNextNumber(int($("#stNext").value) || 1);
+    }
     $("#settings").close();
     renderWho(); renderSetup();
     if (order && !$("#view-review").hidden) renderReview();
     EO.toast("Settings saved.");
   });
   $("#stBackup").addEventListener("click", async () => {
-    const all = await EO.listOrders();
-    const blob = new Blob([JSON.stringify({ app: "ennoble-order-sheet", version: 1, exportedAt: new Date().toISOString(), orders: all })], { type: "application/json" });
-    EO.downloadBlob(blob, "ennoble-orders-backup-" + EO.todayISO() + ".json");
+    let data;
+    if (EO.vault.isProtected()) {
+      const recs = (await EO.rawOrders()).filter(r => r.enc);
+      data = { app: "ennoble-order-sheet", version: 2, protected: true, exportedAt: new Date().toISOString(), vault: EO.vault.backupHeader(), orders: recs.map(EO.vault.recordOut) };
+    } else {
+      data = { app: "ennoble-order-sheet", version: 1, exportedAt: new Date().toISOString(), orders: await EO.listOrders() };
+    }
+    EO.downloadBlob(new Blob([JSON.stringify(data)], { type: "application/json" }), "ennoble-orders-backup-" + EO.todayISO() + ".json");
   });
   $("#stRestore").addEventListener("click", () => $("#stRestoreIn").click());
   $("#stRestoreIn").addEventListener("change", async e => {
     const f = e.target.files[0];
     e.target.value = "";
     if (!f) return;
-    try {
-      const data = JSON.parse(await f.text());
-      const list = Array.isArray(data.orders) ? data.orders : [];
-      for (const o of list) if (o && o.id && o.items) await EO.saveOrder(EO.upgradeOrder(o));
-      EO.toast(list.length + " orders restored.");
-      renderRecent();
-    } catch (err) { EO.toast("That isn't an order backup file.", "bad"); }
+    let data;
+    try { data = JSON.parse(await f.text()); } catch (err) { EO.toast("That isn't an order backup file.", "bad"); return; }
+    let list = Array.isArray(data.orders) ? data.orders : [];
+    if (data.protected) {
+      const pw = await askPassword("Backup password", "This backup is encrypted. Type the company password it was made with.");
+      if (!pw) return;
+      list = await EO.vault.openBackup(data.vault, list, pw);
+      if (!list) { EO.toast("That password doesn't open this backup.", "bad"); return; }
+    }
+    let n = 0;
+    for (const o of list) if (o && o.id && o.items) { await EO.saveOrder(EO.upgradeOrder(o)); n++; }
+    EO.toast(n + " orders restored.");
+    renderRecent();
   });
 
   /* ======================= nav + start ======================= */
@@ -1051,11 +1289,32 @@
   $("#btnNew2").addEventListener("click", goHome);
   window.addEventListener("beforeunload", () => persist.flush());
 
-  readSetupLink();
-  window.addEventListener("hashchange", () => { if (readSetupLink()) renderSetup(); });
-  renderWho();
-  goHome();
-  scrubSaved().catch(() => {});
+  async function boot() {
+    const join = (/[#&]join=([A-Za-z0-9_-]+)/.exec(location.hash || "") || [])[1];
+    if (join) {
+      history.replaceState(null, "", location.pathname + location.search);
+      await joinFlow(join);
+    } else if (EO.vault.isProtected()) {
+      document.body.classList.add("locked");
+      if (!(await EO.vault.resume())) await unlockFlow();
+      document.body.classList.remove("locked");
+    }
+    if (/[#&]setup=/.test(location.hash || "")) {
+      if (EO.vault.isProtected()) {
+        history.replaceState(null, "", location.pathname + location.search);
+        EO.toast("This computer uses the company password. Ask for the new worker link.", "bad");
+      } else readSetupLink();
+    }
+    renderWho();
+    renderNav();
+    await goHome();
+    scrubSaved().catch(() => {});
+  }
+  window.addEventListener("hashchange", () => {
+    if (/[#&]join=/.test(location.hash)) location.reload();
+    else if (!EO.vault.isProtected() && readSetupLink()) renderSetup();
+  });
+  boot();
 
   // Exposed for tests and the console.
   EO.app = { get order() { return order; }, openOrder, makeSheet, renderReview };

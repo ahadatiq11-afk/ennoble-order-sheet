@@ -6,7 +6,7 @@ Drop in whatever the customer sent: a PDF, a Word or Excel file, PowerPoint, pho
 
 **Website:** https://ahadatiq11-afk.github.io/ennoble-order-sheet/
 
-It's free. There's no login and no server: everything runs in the browser.
+It's free. There's no server: everything runs in the browser. A company password keeps it closed to anyone outside the company.
 
 ---
 
@@ -15,11 +15,14 @@ It's free. There's no login and no server: everything runs in the browser.
 1. **Get a free Gemini key.** Open https://aistudio.google.com/apikey, sign in with a Google account, and click **Create API key**. Don't turn on billing. Copy the key straight away; it starts with `AQ.` or `AIza`.
 2. **Switch the website on** (once). In this GitHub repo go to **Settings → Pages**. Under *Build and deployment*, set **Source: Deploy from a branch**, **Branch: `main`**, folder **`/ (root)`**, and click **Save**. After a minute or two the site is live at the address above.
 3. **Set up your computer.** Open the website and type your name, your initials (for example `AA`) and the Gemini key. Click **Save and start**.
-4. **Invite colleagues.** Open **Settings → Copy setup link** and send the link on WhatsApp or email. Share it only inside the company: anyone with the link can use the key's free allowance.
+4. **Turn on the password.** Open **Settings → Password & access**. Choose a **company password** (workers type it to open the tool) and a different **admin password** (only you; it unlocks the settings). Click **Turn on password**.
+5. **Invite workers.** In **Settings → Give the tool to a worker**, choose whether the link includes your Gemini key and whether workers may use their own key instead. Then click **Copy worker link**. Send the link on WhatsApp or email, and tell them the company password **separately** (in person or by phone).
 
 ## For everyone who makes order sheets
 
-**First time:** open the setup link you were sent, type your name and initials, and click **Save and start**. Bookmark the website.
+**First time:** open the worker link you were sent and type the company password. Then type your name and initials, choose **Use the company key** (or **Use my own key** and paste your own free key), and click **Save and start**. Bookmark the website.
+
+**After that:** the site asks for the company password each time you open it in a new browser window. **Lock** in the top bar locks it straight away.
 
 **For every order:**
 
@@ -30,6 +33,17 @@ It's free. There's no login and no server: everything runs in the browser.
 5. Click **Make order sheet**. Then use **Download PDF**, **Download Excel** or **Print**.
 
 If Gemini can't read an order, click **Fill it in by hand instead**. You get a blank sheet with the customer's text next to it.
+
+## Password and access
+
+- **Company password:** needed to open the tool on every computer. Without it the page shows only the lock screen. On each computer it also encrypts the saved orders and the Gemini key(s) (AES-256), so someone who opens the browser's storage sees only scrambled data.
+- **Admin password:** only Ahad has it. Workers can read orders, make sheets, download backups and choose between the company key and their own. They can't change names, initials, order numbers, the sheet header, the company key, the passwords, or restore backups. To change a setting on a worker's computer, open **Settings** there and type the admin password: it unlocks the settings until that browser window is closed or **Lock** is pressed.
+- **Worker link:** carries the company name, the admin lock and (if ticked) the company Gemini key, all encrypted with the company password. The link alone is useless, so send the password separately.
+- **Changing the company password:** change it in **Settings**, send everyone a new worker link and the new password. A computer opening the new link asks once for the old password so it keeps its saved orders. If someone left the company and kept the old link and password, also make a new Gemini key in AI Studio and delete the old one: they could still read the old key from the old link.
+- **Their own key:** a worker who chooses **Use my own key** uses their own free daily allowance, which leaves the company key's 20 orders a day for everyone else.
+- **The website itself:** workers only use it. Only the people with write access to this GitHub repository can change the site, so keep that to yourself (**Settings → Collaborators**).
+- **What it can't stop:** it all runs in the browser. Someone who knows the company password can open the browser's developer tools and dig out the company key, or switch off the admin lock on their own computer. That only changes their own copy, never the website or anyone else's computer. Give the password only to people you trust with the key, and use a strong password (at least 8 characters, ideally a short sentence) because a stolen link can be guessed against offline.
+- **Backups** made while the password is on stay encrypted. Restoring one asks for the company password that was in use when it was made.
 
 ## Good to know
 
@@ -64,7 +78,10 @@ python3 -m http.server 8000
 | `js/sheet-pdf.js` | The production sheet as a PDF (pdfmake) |
 | `js/sheet-xlsx.js` | The Excel copy (ExcelJS) |
 | `js/store.js` | Settings (localStorage), order numbers, saved orders (IndexedDB) |
+| `js/vault.js` | Company password: encryption of saved orders and keys, the worker link, the admin lock, encrypted backups |
 
 Libraries are vendored in `vendor/`: pdf.js 4.10.38, pdfmake 0.2.23 (with Helvetica/Courier metrics from pdfkit), ExcelJS 4.4.0, JSZip 3.10.1 and SheetJS 0.18.5.
 
 SheetJS 0.18.5 is the last version on npm. It has known issues with deliberately crafted files, so it is only loaded for old `.xls`/`.ods` spreadsheets and old `.doc`/`.msg` files. pdf.js runs with `isEvalSupported: false`. The page's Content-Security-Policy only allows network calls to the Gemini API.
+
+Password protection uses Web Crypto only. Each computer has a random AES-GCM-256 data key, wrapped with a key derived from the company password (PBKDF2-SHA256, 310,000 rounds). Saved orders and the Gemini keys are sealed with that data key. The unwrapped data key sits in `sessionStorage` while the tab is open, so a reload doesn't ask again. The worker link (`#join=`) is the company settings sealed with a key derived from the password and a fresh salt; it is removed from the address bar as soon as the page reads it. The admin password is stored as a salted PBKDF2 hash.

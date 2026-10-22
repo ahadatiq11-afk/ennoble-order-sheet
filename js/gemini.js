@@ -247,7 +247,7 @@ pictureRefs.length
   /* Read the order. Tries the best model, then the next, until one answers. */
   EO.extractOrder = async function (input, onStatus, signal) {
     const s = EO.settings();
-    if (!s.apiKey) throw new Error("No Gemini key yet. Open Settings and add one (or open the setup link you were sent).");
+    if (!s.apiKey) throw new Error("No Gemini key yet. Open Settings and add one (or open the worker link you were sent).");
     const refs = input.pictures.filter((p, i) => i < 20).map(p => p.ref);
     onStatus("Choosing the Gemini model…");
     let models;

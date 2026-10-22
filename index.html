@@ -23,6 +23,7 @@
       <button class="btn ghost" id="navNew" type="button">New order</button>
       <button class="btn ghost" id="navOrders" type="button">Saved orders</button>
       <button class="btn ghost" id="navSettings" type="button">Settings</button>
+      <button class="btn ghost" id="navLock" type="button" hidden>Lock</button>
     </nav>
   </div>
 </header>
@@ -37,7 +38,15 @@
         <div class="grid c3">
           <div class="f"><label for="suName">Your name</label><input id="suName" autocomplete="name" placeholder="e.g. Ahad Atiq"></div>
           <div class="f"><label for="suIni">Your initials</label><input id="suIni" class="mono" maxlength="4" placeholder="e.g. AA"><span class="help">Order numbers: EI-26-<b id="suIniPrev">AA</b>-0001</span></div>
-          <div class="f"><label for="suKey">Gemini key</label><input id="suKey" type="password" autocomplete="off" placeholder="Paste the key"><span class="help" id="suKeyHelp">Filled in for you if you opened a setup link.</span></div>
+          <div class="f">
+            <span class="flabel">Gemini key</span>
+            <div id="suChoice" class="choice" hidden>
+              <label><input type="radio" name="suKeyMode" id="suCompany" value="company" checked> Use the company key</label>
+              <label id="suOwnWrap"><input type="radio" name="suKeyMode" id="suOwn" value="own"> Use my own key</label>
+            </div>
+            <input id="suKey" type="password" autocomplete="off" placeholder="Paste your key" aria-label="Gemini key">
+            <span class="help" id="suKeyHelp">Filled in for you if you opened a setup link.</span>
+          </div>
         </div>
         <details class="sub">
           <summary>No key? Get a free one (5 minutes)</summary>
@@ -46,7 +55,7 @@
               <li>Open <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a> and sign in with a Google account.</li>
               <li>Click <b>Create API key</b>. Don't turn on billing: the free tier is enough.</li>
               <li>Copy the key straight away (it starts with <span class="mono">AQ.</span> or <span class="mono">AIza</span>) and paste it above. Never click <b>Set up billing</b>: without billing the key stays free.</li>
-              <li>Then open Settings and use <b>Copy setup link</b> to give the same key to your colleagues.</li>
+              <li>Then open Settings, turn on the password and use <b>Copy worker link</b> to give the tool to your workers.</li>
             </ol>
           </div>
         </details>
@@ -133,7 +142,15 @@
   <form method="dialog">
     <div class="dhead"><h2 id="setTitle">Settings</h2><button class="iconbtn" value="cancel" aria-label="Close">✕</button></div>
     <div class="dbody">
-      <fieldset>
+      <div class="note" id="stAdminBar" hidden>
+        <div>Some settings are locked. Only the admin can change them.</div>
+        <div class="keyrow" style="margin-top:8px">
+          <input id="stAdminPw" class="in" type="password" autocomplete="off" placeholder="Admin password" aria-label="Admin password">
+          <button class="btn" id="stAdminUnlock" type="button">Unlock</button>
+        </div>
+        <span class="help" id="stAdminMsg"></span>
+      </div>
+      <fieldset class="admin-only">
         <legend>You</legend>
         <div class="grid c3">
           <div class="f"><label for="stName">Name</label><input id="stName" autocomplete="name"></div>
@@ -144,20 +161,61 @@
       </fieldset>
       <fieldset>
         <legend>Google Gemini key</legend>
-        <div class="keyrow">
-          <input id="stKey" class="in mono" type="password" autocomplete="off" placeholder="Paste the key">
+        <div id="stChoice" class="choice" hidden>
+          <label><input type="radio" name="stKeyMode" id="stUseCompany" value="company"> Use the company key</label>
+          <label id="stOwnWrap"><input type="radio" name="stKeyMode" id="stUseOwn" value="own"> Use my own key</label>
+        </div>
+        <div class="keyrow" id="stKeyRow">
+          <input id="stKey" class="in mono" type="password" autocomplete="off" placeholder="Paste the key" aria-label="Gemini key">
           <button class="btn" id="stKeyShow" type="button">Show</button>
           <button class="btn" id="stKeyTest" type="button">Test</button>
         </div>
-        <span class="help" id="stKeyMsg">Free key from <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a>. It stays in this browser only.</span>
+        <span class="help" id="stKeyMsg"></span>
+        <div class="f admin-field" id="stCompanyWrap" hidden>
+          <label for="stCompanyKey">Company key (shared with workers through the link)</label>
+          <input id="stCompanyKey" class="in mono" type="password" autocomplete="off" placeholder="Paste the company key">
+        </div>
       </fieldset>
-      <fieldset>
-        <legend>Give the tool to a colleague</legend>
-        <p class="lead" style="margin:0">Send them this link on WhatsApp or email. Opening it puts the Gemini key into their browser, then they type their own name and initials.</p>
-        <div class="btnrow"><button class="btn" id="stCopyLink" type="button">Copy setup link</button><span class="help" id="stLinkMsg"></span></div>
-        <span class="help">Anyone with the setup link can use the key's free allowance, so share it only inside the company.</span>
+      <fieldset class="admin-only" id="stAccessFs">
+        <legend>Password &amp; access</legend>
+        <div id="stProtOff">
+          <p class="lead" style="margin:0">Lock the tool with a company password. Workers type it to open the tool; it also encrypts the Gemini key and the saved orders on each computer. The admin password (only you) unlocks these settings.</p>
+          <div class="grid c2">
+            <div class="f"><label for="stPw1">Company password (for workers)</label><input id="stPw1" type="password" class="in" autocomplete="new-password"></div>
+            <div class="f"><label for="stPw2">Type it again</label><input id="stPw2" type="password" class="in" autocomplete="new-password"></div>
+            <div class="f"><label for="stAd1">Admin password (only you)</label><input id="stAd1" type="password" class="in" autocomplete="new-password"></div>
+            <div class="f"><label for="stAd2">Type it again</label><input id="stAd2" type="password" class="in" autocomplete="new-password"></div>
+          </div>
+          <div class="btnrow"><button class="btn primary" id="stProtect" type="button">Turn on password</button><span class="help" id="stProtMsg"></span></div>
+        </div>
+        <div id="stProtOn" hidden>
+          <p class="lead" style="margin:0">Password protection is on. Changing the company password means sending workers a new link.</p>
+          <div class="grid c2">
+            <div class="f"><label for="stNewPw">New company password</label><input id="stNewPw" type="password" class="in" autocomplete="new-password"></div>
+            <div class="f"><label for="stNewAd">New admin password</label><input id="stNewAd" type="password" class="in" autocomplete="new-password"></div>
+          </div>
+          <div class="btnrow">
+            <button class="btn" id="stChangePw" type="button">Change company password</button>
+            <button class="btn" id="stChangeAd" type="button">Change admin password</button>
+            <button class="btn danger" id="stUnprotect" type="button">Turn off password</button>
+          </div>
+          <span class="help" id="stProtMsg2"></span>
+        </div>
       </fieldset>
-      <fieldset>
+      <fieldset class="admin-only" id="stShareFs">
+        <legend>Give the tool to a worker</legend>
+        <div id="stLinkOn" hidden>
+          <p class="lead" style="margin:0">The worker link carries the company settings and, if you tick it, your Gemini key, all locked with the company password. Send the link and tell them the password separately (in person or by phone).</p>
+          <label class="check"><input type="checkbox" id="stIncKey" checked> Include the company Gemini key</label>
+          <label class="check"><input type="checkbox" id="stAllowOwn" checked> Let workers use their own key instead</label>
+          <div class="btnrow"><button class="btn" id="stCopyJoin" type="button">Copy worker link</button><span class="help" id="stJoinMsg"></span></div>
+        </div>
+        <div id="stLinkOff">
+          <p class="lead" style="margin:0">Turn on the password above first: then the link and your key are protected. Without it, this link carries your key in plain form.</p>
+          <div class="btnrow"><button class="btn" id="stCopyLink" type="button">Copy unprotected setup link</button><span class="help" id="stLinkMsg"></span></div>
+        </div>
+      </fieldset>
+      <fieldset class="admin-only">
         <legend>Sheet header</legend>
         <div class="grid c2">
           <div class="f"><label for="stCo">Company name</label><input id="stCo"></div>
@@ -172,10 +230,10 @@
       </fieldset>
       <fieldset>
         <legend>Backup</legend>
-        <p class="lead" style="margin:0">Saved orders live in this browser. Download a backup now and then, or to move orders to another computer.</p>
+        <p class="lead" style="margin:0">Saved orders live in this browser. Download a backup now and then, or to move orders to another computer. With the password on, backups stay encrypted and need the company password to restore.</p>
         <div class="btnrow">
           <button class="btn" id="stBackup" type="button">Download backup</button>
-          <button class="btn" id="stRestore" type="button">Restore backup</button>
+          <button class="btn admin-field" id="stRestore" type="button">Restore backup</button>
           <input type="file" id="stRestoreIn" accept=".json,application/json" hidden>
         </div>
       </fieldset>
@@ -184,8 +242,32 @@
   </form>
 </dialog>
 
+<!-- ======================= LOCK ======================= -->
+<div id="lock" class="lock" hidden>
+  <form class="lock-card" id="lockForm" autocomplete="off">
+    <img src="img/ennoble-logo.png" alt="Ennoble" class="lock-logo">
+    <h1 id="lockTitle">Enter the company password</h1>
+    <p class="lead" id="lockMsg"></p>
+    <input id="lockPw" type="password" class="in" placeholder="Company password" aria-label="Company password" autocomplete="current-password">
+    <button class="btn primary big" id="lockGo" type="submit">Unlock</button>
+    <p class="help" id="lockErr" role="alert"></p>
+  </form>
+</div>
+
+<dialog id="pwDialog" aria-labelledby="pwTitle">
+  <form method="dialog">
+    <div class="dhead"><h2 id="pwTitle">Password</h2></div>
+    <div class="dbody">
+      <p class="lead" id="pwMsg" style="margin:0"></p>
+      <input id="pwInput" type="password" class="in" autocomplete="off" aria-label="Password">
+    </div>
+    <div class="dfoot"><button class="btn" value="cancel" id="pwCancel">Cancel</button><button class="btn primary" value="ok" id="pwOk">OK</button></div>
+  </form>
+</dialog>
+
 <script src="js/util.js"></script>
 <script src="js/store.js"></script>
+<script src="js/vault.js"></script>
 <script src="js/model.js"></script>
 <script src="js/readers.js"></script>
 <script src="js/gemini.js"></script>

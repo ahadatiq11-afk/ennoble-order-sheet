@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Ennoble Order Sheet</title>
+<meta name="description" content="Turn any customer order into the standard Ennoble International production order sheet.">
+<meta name="robots" content="noindex">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob:; connect-src 'self' https://generativelanguage.googleapis.com data: blob:; worker-src 'self' blob:; frame-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'">
+<link rel="icon" href="img/icon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-in">
+    <button class="brand" id="goHome" type="button" aria-label="Ennoble Order Sheet home"><b>Ennoble</b><span>Order Sheet Maker</span></button>
+    <div class="spacer"></div>
+    <span class="who" id="who"></span>
+    <nav class="nav" aria-label="Main">
+      <button class="btn ghost" id="navNew" type="button">New order</button>
+      <button class="btn ghost" id="navOrders" type="button">Saved orders</button>
+      <button class="btn ghost" id="navSettings" type="button">Settings</button>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <!-- ======================= HOME ======================= -->
+  <section class="view" id="view-home">
+    <div class="panel" id="setupPanel" hidden>
+      <header><h2>Set up this computer</h2><span class="hint">Once only, about 2 minutes</span></header>
+      <div class="panel-body">
+        <p class="lead">The order is read by Google Gemini (free). Each person types their name and initials once; they print on every sheet and start your order numbers.</p>
+        <div class="grid c3">
+          <div class="f"><label for="suName">Your name</label><input id="suName" autocomplete="name" placeholder="e.g. Ahad Atiq"></div>
+          <div class="f"><label for="suIni">Your initials</label><input id="suIni" class="mono" maxlength="4" placeholder="e.g. AA"><span class="help">Order numbers: EI-26-<b id="suIniPrev">AA</b>-0001</span></div>
+          <div class="f"><label for="suKey">Gemini key</label><input id="suKey" type="password" autocomplete="off" placeholder="AIza…"><span class="help" id="suKeyHelp">Filled in for you if you opened a setup link.</span></div>
+        </div>
+        <details class="sub">
+          <summary>No key? Get a free one (5 minutes)</summary>
+          <div>
+            <ol class="steps">
+              <li>Open <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a> and sign in with a Google account.</li>
+              <li>Click <b>Create API key</b>. Don't turn on billing: the free tier is enough.</li>
+              <li>Copy the key (it starts with <span class="mono">AIza</span>) and paste it above.</li>
+              <li>Then open Settings and use <b>Copy setup link</b> to give the same key to your colleagues.</li>
+            </ol>
+          </div>
+        </details>
+        <div class="btnrow"><button class="btn primary" id="suSave" type="button">Save and start</button><span class="help" id="suMsg"></span></div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <header><h2>New order</h2><span class="hint">Drop everything the customer sent for this one order</span></header>
+      <div class="panel-body">
+        <button class="drop" id="drop" type="button">
+          <span class="big">Drop the customer's files here</span>
+          <span class="sub">or click to choose. Several files are fine: PO, size list, logos, mockups.</span>
+          <span class="types">PDF · WORD · EXCEL · POWERPOINT · PHOTOS · SCREENSHOTS · EMAILS · ZIP</span>
+        </button>
+        <input type="file" id="fileIn" multiple hidden>
+        <div class="chips" id="chips"></div>
+        <div class="f">
+          <label for="paste">Or paste the order text: email, WhatsApp chat, notes</label>
+          <textarea id="paste" rows="4" placeholder="Paste anything the customer wrote…"></textarea>
+        </div>
+        <div class="btnrow">
+          <button class="btn primary big" id="btnRead" type="button">Read the order</button>
+          <button class="btn" id="btnBlank" type="button">Fill in a blank sheet</button>
+        </div>
+        <div class="progress" id="progress" hidden>
+          <div class="spin" aria-hidden="true"></div>
+          <div class="msg" id="progressMsg" role="status" aria-live="polite">Working…</div>
+          <button class="btn small" id="btnStop" type="button">Stop</button>
+        </div>
+        <div id="intakeNote"></div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <header><h2>Recent orders</h2><span class="hint">Saved on this computer</span><span class="spacer"></span><button class="btn small" id="btnAllOrders" type="button">All saved orders</button></header>
+      <ul class="olist" id="recent"></ul>
+    </div>
+  </section>
+
+  <!-- ======================= REVIEW ======================= -->
+  <section class="view" id="view-review" hidden></section>
+
+  <!-- ======================= SHEET ======================= -->
+  <section class="view" id="view-sheet" hidden>
+    <div class="panel">
+      <header><h2>Order sheet ready</h2><span class="ono" id="sheetNo"></span></header>
+      <div class="panel-body">
+        <div id="sheetNote"></div>
+        <div class="btnrow">
+          <button class="btn primary" id="btnPdf" type="button">Download PDF</button>
+          <button class="btn" id="btnXlsx" type="button">Download Excel</button>
+          <button class="btn" id="btnPrint" type="button">Print</button>
+          <span class="spacer"></span>
+          <button class="btn ghost" id="btnEdit" type="button">Edit order</button>
+          <button class="btn ghost" id="btnNew2" type="button">New order</button>
+        </div>
+      </div>
+    </div>
+    <div class="preview" id="preview" aria-label="Order sheet preview"></div>
+  </section>
+
+  <!-- ======================= ORDERS ======================= -->
+  <section class="view" id="view-orders" hidden>
+    <div class="panel">
+      <header><h2>Saved orders</h2><span class="hint" id="ordersCount"></span><span class="spacer"></span>
+        <input class="in" id="ordersSearch" type="search" placeholder="Search customer, number, product…" style="max-width:280px"></header>
+      <ul class="olist" id="ordersList"></ul>
+    </div>
+  </section>
+</main>
+
+<div class="actionbar" id="actionbar" hidden>
+  <div class="actionbar-in">
+    <div class="sum" id="actionSum"></div>
+    <button class="btn" id="btnBackHome" type="button">Save &amp; close</button>
+    <button class="btn primary big" id="btnMake" type="button">Make order sheet</button>
+  </div>
+</div>
+
+<!-- ======================= SETTINGS ======================= -->
+<dialog id="settings" aria-labelledby="setTitle">
+  <form method="dialog">
+    <div class="dhead"><h2 id="setTitle">Settings</h2><button class="iconbtn" value="cancel" aria-label="Close">✕</button></div>
+    <div class="dbody">
+      <fieldset>
+        <legend>You</legend>
+        <div class="grid c3">
+          <div class="f"><label for="stName">Name</label><input id="stName" autocomplete="name"></div>
+          <div class="f"><label for="stIni">Initials</label><input id="stIni" class="mono" maxlength="4"></div>
+          <div class="f"><label for="stNext">Next order no.</label><input id="stNext" class="mono" type="number" min="1" step="1"></div>
+        </div>
+        <span class="help">Your next sheet will be <b class="mono" id="stNextPrev"></b>. Each person's numbers carry their initials, so two computers never clash.</span>
+      </fieldset>
+      <fieldset>
+        <legend>Google Gemini key</legend>
+        <div class="keyrow">
+          <input id="stKey" class="in mono" type="password" autocomplete="off" placeholder="AIza…">
+          <button class="btn" id="stKeyShow" type="button">Show</button>
+          <button class="btn" id="stKeyTest" type="button">Test</button>
+        </div>
+        <span class="help" id="stKeyMsg">Free key from <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a>. It stays in this browser only.</span>
+      </fieldset>
+      <fieldset>
+        <legend>Give the tool to a colleague</legend>
+        <p class="lead" style="margin:0">Send them this link on WhatsApp or email. Opening it puts the Gemini key into their browser, then they type their own name and initials.</p>
+        <div class="btnrow"><button class="btn" id="stCopyLink" type="button">Copy setup link</button><span class="help" id="stLinkMsg"></span></div>
+        <span class="help">Anyone with the setup link can use the key's free allowance, so share it only inside the company.</span>
+      </fieldset>
+      <fieldset>
+        <legend>Sheet header</legend>
+        <div class="grid c2">
+          <div class="f"><label for="stCo">Company name</label><input id="stCo"></div>
+          <div class="f"><label for="stTag">Tagline</label><input id="stTag"></div>
+        </div>
+        <div class="btnrow">
+          <img id="stLogoPrev" class="logo-prev" alt="Logo" hidden>
+          <button class="btn" id="stLogoBtn" type="button">Add logo</button>
+          <button class="btn ghost" id="stLogoDel" type="button" hidden>Remove logo</button>
+          <input type="file" id="stLogoIn" accept="image/*" hidden>
+        </div>
+      </fieldset>
+      <fieldset>
+        <legend>Backup</legend>
+        <p class="lead" style="margin:0">Saved orders live in this browser. Download a backup now and then, or to move orders to another computer.</p>
+        <div class="btnrow">
+          <button class="btn" id="stBackup" type="button">Download backup</button>
+          <button class="btn" id="stRestore" type="button">Restore backup</button>
+          <input type="file" id="stRestoreIn" accept=".json,application/json" hidden>
+        </div>
+      </fieldset>
+    </div>
+    <div class="dfoot"><button class="btn" value="cancel">Cancel</button><button class="btn primary" id="stSave" value="default">Save</button></div>
+  </form>
+</dialog>
+
+<script src="js/util.js"></script>
+<script src="js/store.js"></script>
+<script src="js/model.js"></script>
+<script src="js/readers.js"></script>
+<script src="js/gemini.js"></script>
+<script src="js/sheet-pdf.js"></script>
+<script src="js/sheet-xlsx.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

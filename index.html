@@ -37,7 +37,7 @@
         <div class="grid c3">
           <div class="f"><label for="suName">Your name</label><input id="suName" autocomplete="name" placeholder="e.g. Ahad Atiq"></div>
           <div class="f"><label for="suIni">Your initials</label><input id="suIni" class="mono" maxlength="4" placeholder="e.g. AA"><span class="help">Order numbers: EI-26-<b id="suIniPrev">AA</b>-0001</span></div>
-          <div class="f"><label for="suKey">Gemini key</label><input id="suKey" type="password" autocomplete="off" placeholder="AIza…"><span class="help" id="suKeyHelp">Filled in for you if you opened a setup link.</span></div>
+          <div class="f"><label for="suKey">Gemini key</label><input id="suKey" type="password" autocomplete="off" placeholder="Paste the key"><span class="help" id="suKeyHelp">Filled in for you if you opened a setup link.</span></div>
         </div>
         <details class="sub">
           <summary>No key? Get a free one (5 minutes)</summary>
@@ -45,7 +45,7 @@
             <ol class="steps">
               <li>Open <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a> and sign in with a Google account.</li>
               <li>Click <b>Create API key</b>. Don't turn on billing: the free tier is enough.</li>
-              <li>Copy the key (it starts with <span class="mono">AIza</span>) and paste it above.</li>
+              <li>Copy the key straight away (it starts with <span class="mono">AQ.</span> or <span class="mono">AIza</span>) and paste it above. Never click <b>Set up billing</b>: without billing the key stays free.</li>
               <li>Then open Settings and use <b>Copy setup link</b> to give the same key to your colleagues.</li>
             </ol>
           </div>
@@ -144,7 +144,7 @@
       <fieldset>
         <legend>Google Gemini key</legend>
         <div class="keyrow">
-          <input id="stKey" class="in mono" type="password" autocomplete="off" placeholder="AIza…">
+          <input id="stKey" class="in mono" type="password" autocomplete="off" placeholder="Paste the key">
           <button class="btn" id="stKeyShow" type="button">Show</button>
           <button class="btn" id="stKeyTest" type="button">Test</button>
         </div>

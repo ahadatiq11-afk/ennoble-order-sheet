@@ -121,7 +121,7 @@ pictureRefs.length
     if (e.name === "AbortError") return "Stopped.";
     if (e.network) return e.message;
     if (keyProblem(e)) return "Google refused the Gemini key (" + e.message + "). Open Settings and check the key.";
-    if (e.status === 429) return "The free Gemini limit is used up for now. Wait a minute (or until tomorrow for the daily limit) and try again, or put a different key in Settings.";
+    if (e.status === 429) return "The free Gemini limit is used up for now. Wait a minute (or until tomorrow for the daily limit) and try again, or use a key from a different Google account in Settings.";
     return "Gemini couldn't read this order: " + e.message;
   }
   EO.geminiFriendly = friendly;

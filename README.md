@@ -12,7 +12,7 @@ It's free. There's no login and no server: everything runs in the browser.
 
 ## One-time setup (Ahad)
 
-1. **Get a free Gemini key.** Open https://aistudio.google.com/apikey, sign in with a Google account, and click **Create API key**. Don't turn on billing. Copy the key; it starts with `AIza`.
+1. **Get a free Gemini key.** Open https://aistudio.google.com/apikey, sign in with a Google account, and click **Create API key**. Don't turn on billing. Copy the key straight away; it starts with `AQ.` or `AIza`.
 2. **Switch the website on** (once). In this GitHub repo go to **Settings → Pages**. Under *Build and deployment*, set **Source: Deploy from a branch**, **Branch: `main`**, folder **`/ (root)`**, and click **Save**. After a minute or two the site is live at the address above.
 3. **Set up your computer.** Open the website and type your name, your initials (for example `AA`) and the Gemini key. Click **Save and start**.
 4. **Invite colleagues.** Open **Settings → Copy setup link** and send the link on WhatsApp or email. Share it only inside the company: anyone with the link can use the key's free allowance.
@@ -36,7 +36,7 @@ If Gemini can't read an order, click **Fill it in by hand instead**. You get a b
 - **Order numbers** look like `EI-26-AA-0001`: year, your initials, then a running number. Each person has their own series, so two computers never give out the same number. You can change the next number in **Settings**.
 - **Revisions:** if you change an order after its sheet was downloaded or printed, the next sheet becomes `R2`, then `R3`. The floor can see it's a newer version.
 - **Saved orders** stay in the browser on that computer (**Saved orders** in the top bar). Use **Copy as new** for repeat orders. Download a backup now and then from **Settings → Backup**.
-- **Free limits:** Google's free tier allows a limited number of reads per minute and per day. If it runs out, the page says so: wait a bit, or put a second free key in Settings.
+- **Free limits:** Google's free tier allows a limited number of reads per minute and per day. If it runs out, the page says so: wait a bit (daily limits reset at midnight US Pacific time), or use a key made under a different Google account. Limits count per Google project, so a second key in the same project doesn't add anything.
 - **Privacy:** on Google's free tier, Google may use what you send to improve its products, and its reviewers may read it. If that matters for a customer, turn on billing for the key in Google AI Studio. It costs cents per order, and nothing else changes.
 - **What it reads:** PDF (typed or scanned), Word (.docx and old .doc), Excel (.xlsx, .xls, .csv, .ods), PowerPoint (.pptx), photos and screenshots, emails (.eml and Outlook .msg, attachments included), HTML, text and zip files. Design files (.ai, .eps, .psd, .cdr, embroidery files) are listed under *Files received*.
 - **Prices** are left off the sheet on purpose: it's a production document.

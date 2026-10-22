@@ -550,24 +550,24 @@
     const nextNo = EO.peekNextNumber().text;
     parts.push(panel("Order", null, el("div", { class: "grid" },
       field("Our order no.", order, "orderNo", { mono: true, ph: nextNo, help: order.orderNo ? "" : "Given automatically when you make the sheet." }),
-      field("Customer order code", order, "customerPo", { mono: true, ph: "e.g. BP 347" }),
+      field("Customer order code", order, "customerPo", { mono: true, ph: "e.g. PO 4512" }),
       field("Order received", order, "orderDate", { type: "date" }),
       field("Ship by", order, "shipBy", { type: "date", ph: "date or e.g. ASAP" }),
       field("Priority", order, "priority", { type: "select", options: EO.PRIORITIES }),
       field("Prepared by", order, "preparedBy", { ph: s.name }),
-      field("Mock / design ref", order, "mockRef", { mono: true, ph: "e.g. C-53462" }),
+      field("Mock / design ref", order, "mockRef", { mono: true, ph: "e.g. M-10234" }),
       field("Size chart", order, "sizeChart", { ph: "e.g. Bibs, Soccer" }),
-      field("Repeat of / based on", order, "repeatOf", { cls: "full", ph: "e.g. Same as BB:38, 504 except colours in Pantone PC" })
+      field("Repeat of / based on", order, "repeatOf", { cls: "full", ph: "e.g. Same as TS-11 except colours in Pantone C" })
     )));
 
     const c = order.customer;
     parts.push(panel("Customer & team", "Contact details and addresses are never kept", el("div", { class: "grid" },
-      field("Customer / brand", c, "name", { cls: "s2", onInput: refreshSums, ph: "e.g. NuOla" }),
-      field("Team / design", c, "team", { cls: "s2", onInput: refreshSums, ph: "e.g. Augsburg Lions" })
+      field("Customer / brand", c, "name", { cls: "s2", onInput: refreshSums, ph: "e.g. Apex Teamwear" }),
+      field("Team / design", c, "team", { cls: "s2", onInput: refreshSums, ph: "e.g. City Hawks FC" })
     )));
 
     parts.push(panel("Production notes", "Printed first on the sheet, in a box workers can't miss", el("div", { class: "grid" },
-      field("Notes for production", order, "notes", { type: "area", cls: "full", rows: 4, ph: "e.g. URGENT. Make sure all are perfect and free of defects." })
+      field("Notes for production", order, "notes", { type: "area", cls: "full", rows: 4, ph: "e.g. URGENT. Check every piece carefully." })
     )));
 
     const ap = order.approvals;
@@ -580,8 +580,8 @@
 
     parts.push(panel("Colour specifications", "Pantone and CMYK codes for printing", listEditor(order.colourSpecs, [
       { key: "name", label: "Colour", ph: "e.g. Royal Blue" },
-      { key: "pantone", label: "Pantone", ph: "e.g. Pantone 2738 PC", mono: true },
-      { key: "cmyk", label: "CMYK / values", ph: "e.g. C100 M84 Y0 K2", mono: true }
+      { key: "pantone", label: "Pantone", ph: "e.g. Pantone 286 C", mono: true },
+      { key: "cmyk", label: "CMYK / values", ph: "e.g. C100 M75 Y0 K0", mono: true }
     ], "Colour")));
 
     const itemsHost = el("div", { id: "itemsHost", style: "display:flex;flex-direction:column;gap:14px" });
@@ -595,7 +595,7 @@
       field("Files received", a, "files", { cls: "s2", ph: "logo files, mockups, what's still missing" }),
       field("Names & numbers", a, "namesNumbers", { cls: "s2", ph: "e.g. Names and numbers on back, custom style" }),
       field("Fonts", a, "fonts", { cls: "s2", ph: "e.g. As per mock" }),
-      field("Logos", a, "logos", { cls: "s2", ph: "e.g. NuOla logo centred with team logo" }),
+      field("Logos", a, "logos", { cls: "s2", ph: "e.g. Brand logo centred with team logo" }),
       field("Artwork notes", a, "notes", { type: "area", cls: "full", rows: 2 })
     )));
 
